@@ -1,1 +1,25 @@
-/* Katara — App styles (Bridgelab) */
+/* Katara App styles */
+.grid-bg {
+  background-color: #1C1C1E;
+  background-image:
+    linear-gradient(rgba(74, 144, 217, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74, 144, 217, 0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Drag-over state for file drop zone */
+.drop-zone.drag-over {
+  border-color: #4A90D9 !important;
+  background: rgba(74, 144, 217, 0.08) !important;
+}
+
+/* Card flip animation */
+.card-face {
+  transition: all 0.22s ease;
+}
+
+/* Focus ring for accessibility */
+button:focus-visible {
+  outline: 2px solid #4A90D9;
+  outline-offset: 2px;
+}
