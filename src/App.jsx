@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react'
 import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   collection, addDoc, getDocs, deleteDoc, doc,
-  serverTimestamp, query, orderBy, updateDoc,
+  serverTimestamp, query, orderBy, updateDoc, setDoc, getDoc,
 } from 'firebase/firestore'
 import { auth, db, provider } from './firebase'
 import './App.css'
@@ -32,6 +32,40 @@ const T = {
   r2:       '12px',
   r3:       '16px',
 }
+
+// ─── LANGUAGE STRINGS ─────────────────────────────────────────────────────────
+const LANG = {
+  de: {
+    back: 'Zurück', home: 'Meine Kategorien', newCategory: '+ Neue Kategorie',
+    noCategories: 'Noch keine Kategorien',
+    noCategoriesHint: 'Erstelle deine erste Hauptkategorie,\nz.B. "RiL 301" oder "DB Cargo".',
+    groups: 'Gruppen', subgroups: 'Untergruppen', cards: 'Karten',
+    learn: '▶ Lernen', newGroup: '+ Neue Gruppe', newSubgroup: '+ Neue Untergruppe',
+    addCard: '+ Karte', kiCreate: '📥 Karten erstellen', kiGenerate: '✦ KI generieren',
+    rename: 'Umbenennen', delete: 'Löschen', create: 'Erstellen', cancel: 'Abbrechen',
+    save: 'Speichern', saveChanges: 'Änderungen speichern', settings: 'Einstellungen',
+    signOut: 'Abmelden', language: 'Sprache', dailyGoal: 'Tagesziel (Karten)',
+    defaultMode: 'Standard-Lernmodus', accountInfo: 'Konto',
+    saved: 'Gespeichert', saving: 'Speichert…', cardsUnit: 'Karten',
+    classic: 'Klassisch', kiSelect: 'KI-Auswahl',
+  },
+  en: {
+    back: 'Back', home: 'My Categories', newCategory: '+ New Category',
+    noCategories: 'No categories yet',
+    noCategoriesHint: 'Create your first main category,\ne.g. "RiL 301" or "DB Cargo".',
+    groups: 'Groups', subgroups: 'Subgroups', cards: 'Cards',
+    learn: '▶ Learn', newGroup: '+ New Group', newSubgroup: '+ New Subgroup',
+    addCard: '+ Card', kiCreate: '📥 Create Cards', kiGenerate: '✦ AI Generate',
+    rename: 'Rename', delete: 'Delete', create: 'Create', cancel: 'Cancel',
+    save: 'Save', saveChanges: 'Save Changes', settings: 'Settings',
+    signOut: 'Sign Out', language: 'Language', dailyGoal: 'Daily Goal (cards)',
+    defaultMode: 'Default Learning Mode', accountInfo: 'Account',
+    saved: 'Saved', saving: 'Saving…', cardsUnit: 'cards',
+    classic: 'Classic', kiSelect: 'AI Selection',
+  },
+}
+const LangContext = createContext(LANG.de)
+const useT = () => useContext(LangContext)
 
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 const toBase64 = f => new Promise((res, rej) => {
@@ -107,6 +141,30 @@ const Btn = ({ children, onClick, variant = 'primary', disabled = false, style =
       }}
     >
       {children}
+    </button>
+  )
+}
+
+// ─── BRIDGELAB NAV BUTTON ─────────────────────────────────────────────────────
+const BridgelabBtn = () => {
+  const [hov, setHov] = useState(false)
+  return (
+    <button
+      onClick={() => { window.location.href = 'https://vocara-peach.vercel.app' }}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        position: 'fixed', top: 12, left: 12, zIndex: 9999,
+        background: hov ? T.s3 : T.s2,
+        border: `1px solid ${hov ? T.borderHov : T.border}`,
+        color: hov ? T.text : T.textSub,
+        borderRadius: T.r, fontSize: 12, fontWeight: 600,
+        padding: '5px 11px', cursor: 'pointer',
+        transition: 'all 0.15s', letterSpacing: 0.3,
+        backdropFilter: 'blur(8px)',
+      }}
+    >
+      ← Bridgelab
     </button>
   )
 }
@@ -202,7 +260,9 @@ const Breadcrumb = ({ crumbs, onNavigate }) => (
 )
 
 // ─── STICKY HEADER ────────────────────────────────────────────────────────────
-const Header = ({ crumbs, onBack, right, title, onNavigate }) => (
+const Header = ({ crumbs, onBack, right, title, onNavigate }) => {
+  const t = useT()
+  return (
   <div style={{
     position: 'sticky', top: 0, zIndex: 50,
     background: `${T.bg}EE`,
@@ -227,7 +287,7 @@ const Header = ({ crumbs, onBack, right, title, onNavigate }) => (
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
           <path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
-        Zurück
+        {t.back}
       </button>
     )}
     <div style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}>
@@ -238,7 +298,8 @@ const Header = ({ crumbs, onBack, right, title, onNavigate }) => (
     </div>
     {right}
   </div>
-)
+  )
+}
 
 // ─── CONTEXT MENU ─────────────────────────────────────────────────────────────
 const CtxMenu = ({ items }) => {
@@ -304,6 +365,7 @@ const CtxMenu = ({ items }) => {
 // ─── CREATE / RENAME MODALS ───────────────────────────────────────────────────
 const CreateModal = ({ title, placeholder, onSave, onClose }) => {
   const [name, setName] = useState('')
+  const t = useT()
   const submit = async () => { if (name.trim()) { await onSave(name.trim()); onClose() } }
   return (
     <Modal onClose={onClose}>
@@ -317,8 +379,8 @@ const CreateModal = ({ title, placeholder, onSave, onClose }) => {
         style={{ marginBottom: 20 }}
       />
       <div style={{ display: 'flex', gap: 10 }}>
-        <Btn onClick={submit} disabled={!name.trim()} full>Erstellen</Btn>
-        <Btn onClick={onClose} variant="secondary" style={{ flexShrink: 0, padding: '9px 16px' }}>Abbrechen</Btn>
+        <Btn onClick={submit} disabled={!name.trim()} full>{t.create}</Btn>
+        <Btn onClick={onClose} variant="secondary" style={{ flexShrink: 0, padding: '9px 16px' }}>{t.cancel}</Btn>
       </div>
     </Modal>
   )
@@ -326,11 +388,12 @@ const CreateModal = ({ title, placeholder, onSave, onClose }) => {
 
 const RenameModal = ({ current, onSave, onClose }) => {
   const [val, setVal] = useState(current)
+  const t = useT()
   const submit = () => { if (val.trim()) { onSave(val.trim()); onClose() } }
   return (
     <Modal onClose={onClose}>
-      <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 20 }}>Umbenennen</h3>
-      <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 7 }}>Neuer Name</div>
+      <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 20 }}>{t.rename}</h3>
+      <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 7 }}>Name</div>
       <input
         autoFocus value={val}
         onChange={e => setVal(e.target.value)}
@@ -339,8 +402,8 @@ const RenameModal = ({ current, onSave, onClose }) => {
         style={{ marginBottom: 20 }}
       />
       <div style={{ display: 'flex', gap: 10 }}>
-        <Btn onClick={submit} disabled={!val.trim()} full>Speichern</Btn>
-        <Btn onClick={onClose} variant="secondary" style={{ flexShrink: 0, padding: '9px 16px' }}>Abbrechen</Btn>
+        <Btn onClick={submit} disabled={!val.trim()} full>{t.save}</Btn>
+        <Btn onClick={onClose} variant="secondary" style={{ flexShrink: 0, padding: '9px 16px' }}>{t.cancel}</Btn>
       </div>
     </Modal>
   )
@@ -369,6 +432,7 @@ const SectionLabel = ({ children }) => (
 // ─── FOLDER CARD (grid tile — Level 1) ───────────────────────────────────────
 const FolderCard = ({ item, onClick, onRename, onDelete }) => {
   const [hov, setHov] = useState(false)
+  const t = useT()
   const count = item._count ?? 0
 
   return (
@@ -420,8 +484,8 @@ const FolderCard = ({ item, onClick, onRename, onDelete }) => {
         onClick={e => e.stopPropagation()}
       >
         <CtxMenu items={[
-          { label: 'Umbenennen', action: onRename },
-          { label: 'Löschen', action: onDelete, danger: true },
+          { label: t.rename, action: onRename },
+          { label: t.delete, action: onDelete, danger: true },
         ]} />
       </div>
     </div>
@@ -431,6 +495,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete }) => {
 // ─── FOLDER ROW (list — Levels 2 & 3) ────────────────────────────────────────
 const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor }) => {
   const [hov, setHov] = useState(false)
+  const t = useT()
   const color = accentColor || T.acc
 
   return (
@@ -477,8 +542,8 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor 
         </svg>
         <div style={{ opacity: hov ? 1 : 0, transition: 'opacity 0.15s' }} onClick={e => e.stopPropagation()}>
           <CtxMenu items={[
-            { label: 'Umbenennen', action: onRename },
-            { label: 'Löschen', action: onDelete, danger: true },
+            { label: t.rename, action: onRename },
+            { label: t.delete, action: onDelete, danger: true },
           ]} />
         </div>
       </div>
@@ -1211,6 +1276,98 @@ const Empty = ({ icon, title, sub }) => (
   </div>
 )
 
+// ─── SETTINGS SCREEN ─────────────────────────────────────────────────────────
+const SettingsScreen = ({ user, settings, onSave, onBack }) => {
+  const t = useT()
+  const [lang,        setLang]        = useState(settings.lang        || 'de')
+  const [dailyGoal,   setDailyGoal]   = useState(settings.dailyGoal   || 10)
+  const [defaultMode, setDefaultMode] = useState(settings.defaultMode || 'klassisch')
+  const [saving,      setSaving]      = useState(false)
+  const [saved,       setSaved]       = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    const data = { lang, dailyGoal, defaultMode }
+    try {
+      await setDoc(doc(db, `users/${user.uid}/settings/preferences`), data)
+      onSave(data)
+      setSaved(true); setTimeout(() => setSaved(false), 2200)
+    } catch (e) { console.error('[Katara] settings save failed:', e) }
+    setSaving(false)
+  }
+
+  const chipStyle = active => ({
+    padding: '8px 18px', borderRadius: T.r, fontSize: 13, fontWeight: 600,
+    border: `1px solid ${active ? T.acc : T.border}`,
+    background: active ? T.accDim : T.s3,
+    color: active ? T.acc : T.textSub,
+    cursor: 'pointer', transition: 'all 0.12s',
+  })
+
+  const SectionCard = ({ label, children }) => (
+    <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r2, padding: '22px 20px', marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 14 }}>{label}</div>
+      {children}
+    </div>
+  )
+
+  return (
+    <div className="app-bg" style={{ minHeight: '100vh', paddingBottom: 60 }}>
+      <Header title={t.settings} onBack={onBack} />
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '32px 24px' }}>
+
+        <SectionCard label={t.language}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[['de', '🇩🇪 Deutsch'], ['en', '🇬🇧 English']].map(([code, label]) => (
+              <button key={code} onClick={() => setLang(code)} style={chipStyle(lang === code)}>{label}</button>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard label={t.dailyGoal}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {[5, 10, 20, 50].map(n => (
+              <button key={n} onClick={() => setDailyGoal(n)} style={chipStyle(dailyGoal === n)}>
+                {n} {t.cardsUnit}
+              </button>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard label={t.defaultMode}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {[
+              ['klassisch', `🃏 ${t.classic}`],
+              ['ki',        `✦ ${t.kiSelect}`],
+            ].map(([key, label]) => (
+              <button key={key} onClick={() => setDefaultMode(key)} style={chipStyle(defaultMode === key)}>{label}</button>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard label={t.accountInfo}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+            {user.photoURL && (
+              <img src={user.photoURL} alt="" style={{ width: 42, height: 42, borderRadius: '50%', border: `1px solid ${T.border}`, flexShrink: 0 }} />
+            )}
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{user.displayName}</div>
+              <div style={{ fontSize: 12, color: T.textDim, marginTop: 2 }}>{user.email}</div>
+            </div>
+          </div>
+          <Btn onClick={() => signOut(auth)} variant="danger" style={{ padding: '8px 16px', fontSize: 13 }}>
+            {t.signOut}
+          </Btn>
+        </SectionCard>
+
+        <Btn onClick={save} disabled={saving} full style={{ padding: '14px', fontSize: 15 }}>
+          {saved ? `✓ ${t.saved}` : saving ? t.saving : t.saveChanges}
+        </Btn>
+      </div>
+    </div>
+  )
+}
+
 // ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
 const LoginScreen = () => {
   const [loading, setLoading] = useState(false)
@@ -1272,11 +1429,12 @@ const LoginScreen = () => {
 }
 
 // ─── HOME SCREEN (Level 1: Hauptkategorien) ───────────────────────────────────
-const HomeScreen = ({ user, onOpen }) => {
+const HomeScreen = ({ user, onOpen, onSettings }) => {
   const [items,    setItems]    = useState([])
   const [loading,  setLoading]  = useState(true)
   const [modal,    setModal]    = useState(false)
   const [renaming, setRenaming] = useState(null)
+  const t    = useT()
   const uid  = user.uid
   const path = `users/${uid}/categories`
 
@@ -1326,8 +1484,11 @@ const HomeScreen = ({ user, onOpen }) => {
           <span style={{ fontSize: 13, color: T.textDim }}>
             {user.displayName?.split(' ')[0]}
           </span>
+          <Btn onClick={onSettings} variant="secondary" style={{ padding: '6px 12px', fontSize: 13 }}>
+            ⚙
+          </Btn>
           <Btn onClick={() => signOut(auth)} variant="secondary" style={{ padding: '6px 14px', fontSize: 13 }}>
-            Abmelden
+            {t.signOut}
           </Btn>
         </div>
       </div>
@@ -1337,22 +1498,22 @@ const HomeScreen = ({ user, onOpen }) => {
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 24 }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Exo 2', sans-serif", letterSpacing: 0.3 }}>
-              Meine Kategorien
+              {t.home}
             </h1>
             <p style={{ fontSize: 13, color: T.textSub, marginTop: 4 }}>
-              {loading ? 'Lädt…' : items.length === 0 ? 'Noch keine Kategorien erstellt' : `${items.length} Kategorie${items.length !== 1 ? 'n' : ''}`}
+              {loading ? 'Lädt…' : items.length === 0 ? t.noCategories : `${items.length} Kategorie${items.length !== 1 ? 'n' : ''}`}
             </p>
           </div>
           <Btn onClick={() => setModal(true)} style={{ padding: '10px 20px' }}>
-            + Neue Kategorie
+            {t.newCategory}
           </Btn>
         </div>
 
         {!loading && items.length === 0 ? (
           <Empty
             icon="📚"
-            title="Noch keine Kategorien"
-            sub={'Erstelle deine erste Hauptkategorie,\nz.B. "RiL 301" oder "DB Cargo".'}
+            title={t.noCategories}
+            sub={t.noCategoriesHint}
           />
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
@@ -1382,6 +1543,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
   const [cards,     setCards]     = useState([])
   const [cardModal, setCardModal] = useState(null)
   const [kiImport,  setKiImport]  = useState(false)
+  const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories`
   const cardsPath = `users/${uid}/categories/${cat.id}/cards`
@@ -1427,9 +1589,9 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
         onBack={onBack}
         right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>📥 Karten erstellen</Btn>
-            <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '7px 12px', fontSize: 13 }}>+ Karte</Btn>
-            <Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>+ Neue Gruppe</Btn>
+            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>{t.kiCreate}</Btn>
+            <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '7px 12px', fontSize: 13 }}>{t.addCard}</Btn>
+            <Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>{t.newGroup}</Btn>
           </div>
         }
       />
@@ -1440,11 +1602,11 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
         }
         {items.length > 0 && (
           <>
-            <SectionLabel>Gruppen</SectionLabel>
+            <SectionLabel>{t.groups}</SectionLabel>
             {items.map(item => (
               <FolderRow
                 key={item.id} item={item}
-                countLabel={`${item._count || 0} Untergruppen`}
+                countLabel={`${item._count || 0} ${t.subgroups}`}
                 accentColor="#7BB8FF"
                 onClick={() => onOpen(item)}
                 onRename={() => setRenaming(item)}
@@ -1455,14 +1617,14 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
         )}
         {cards.length > 0 && (
           <div style={{ marginTop: items.length > 0 ? 28 : 0 }}>
-            <SectionLabel>Karten ({cards.length})</SectionLabel>
+            <SectionLabel>{t.cards} ({cards.length})</SectionLabel>
             {cards.map(c => (
               <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} />
             ))}
           </div>
         )}
       </div>
-      {modal     && <CreateModal title="Neue Gruppe" placeholder="z.B. Hauptsignale" onSave={create} onClose={() => setModal(false)} />}
+      {modal     && <CreateModal title={t.newGroup.replace('+ ','')} placeholder="z.B. Hauptsignale" onSave={create} onClose={() => setModal(false)} />}
       {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {kiImport  && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
@@ -1478,6 +1640,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
   const [cards,     setCards]     = useState([])
   const [cardModal, setCardModal] = useState(null)
   const [kiImport,  setKiImport]  = useState(false)
+  const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories`
   const cardsPath = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/cards`
@@ -1523,9 +1686,9 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
         onBack={onBack}
         right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>📥 Karten erstellen</Btn>
-            <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '7px 12px', fontSize: 13 }}>+ Karte</Btn>
-            <Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>+ Neue Untergruppe</Btn>
+            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>{t.kiCreate}</Btn>
+            <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '7px 12px', fontSize: 13 }}>{t.addCard}</Btn>
+            <Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>{t.newSubgroup}</Btn>
           </div>
         }
       />
@@ -1536,11 +1699,11 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
         }
         {items.length > 0 && (
           <>
-            <SectionLabel>Untergruppen</SectionLabel>
+            <SectionLabel>{t.subgroups}</SectionLabel>
             {items.map(item => (
               <FolderRow
                 key={item.id} item={item}
-                countLabel={`${item._count || 0} Karten`}
+                countLabel={`${item._count || 0} ${t.cards}`}
                 accentColor={T.amber}
                 onClick={() => onOpen(item)}
                 onRename={() => setRenaming(item)}
@@ -1551,14 +1714,14 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
         )}
         {cards.length > 0 && (
           <div style={{ marginTop: items.length > 0 ? 28 : 0 }}>
-            <SectionLabel>Karten ({cards.length})</SectionLabel>
+            <SectionLabel>{t.cards} ({cards.length})</SectionLabel>
             {cards.map(c => (
               <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} />
             ))}
           </div>
         )}
       </div>
-      {modal     && <CreateModal title="Neue Untergruppe" placeholder="z.B. Hp-Begriffe" onSave={create} onClose={() => setModal(false)} />}
+      {modal     && <CreateModal title={t.newSubgroup.replace('+ ','')} placeholder="z.B. Hp-Begriffe" onSave={create} onClose={() => setModal(false)} />}
       {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {kiImport  && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
@@ -1572,6 +1735,7 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack }) => {
   const [cardModal, setCardModal] = useState(null)
   const [kiImport,  setKiImport]  = useState(false)
   const [learning,  setLearning]  = useState(false)
+  const t = useT()
   const uid      = user.uid
   const basePath = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories/${subsub.id}`
   const cardsPath = `${basePath}/cards`
@@ -1604,10 +1768,10 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack }) => {
         {/* Action bar */}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 22, alignItems: 'center' }}>
           <Btn onClick={() => setCardModal('new')} style={{ padding: '9px 16px' }}>
-            + Karte
+            {t.addCard}
           </Btn>
           <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '9px 16px' }}>
-            ✦ KI generieren
+            {t.kiGenerate}
           </Btn>
           <div style={{ flex: 1 }} />
           <Btn
@@ -1616,7 +1780,7 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack }) => {
             disabled={cards.length === 0}
             style={{ padding: '9px 22px' }}
           >
-            ▶ Lernen
+            {t.learn}
           </Btn>
         </div>
 
@@ -1652,30 +1816,43 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack }) => {
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [user, setUser] = useState(undefined)
-  const [nav,  setNav]  = useState([{ screen: 'home' }])
+  const [user,     setUser]     = useState(undefined)
+  const [nav,      setNav]      = useState([{ screen: 'home' }])
+  const [settings, setSettings] = useState({ lang: 'de', dailyGoal: 10, defaultMode: 'klassisch' })
 
   useEffect(() => onAuthStateChanged(auth, u => setUser(u || null)), [])
+
+  // Load settings from Firestore when user logs in
+  useEffect(() => {
+    if (!user) return
+    getDoc(doc(db, `users/${user.uid}/settings/preferences`))
+      .then(snap => { if (snap.exists()) setSettings(snap.data()) })
+      .catch(() => {})
+  }, [user?.uid])
 
   const push = entry => setNav(n => [...n, entry])
   const pop  = () => setNav(n => n.length > 1 ? n.slice(0, -1) : n)
   const cur  = nav[nav.length - 1]
+  const lang = LANG[settings.lang] || LANG.de
 
   if (user === undefined) {
     return (
       <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <BridgelabBtn />
         <div style={{ color: T.textDim, fontSize: 14 }}>Wird geladen…</div>
       </div>
     )
   }
 
   return (
-    <>
+    <LangContext.Provider value={lang}>
+      <BridgelabBtn />
       {!user && <LoginScreen />}
-      {user && cur.screen === 'home'   && <HomeScreen user={user} onOpen={cat => push({ screen: 'sub', cat })} />}
-      {user && cur.screen === 'sub'    && <SubcategoryScreen user={user} cat={cur.cat} onBack={pop} onOpen={sub => push({ screen: 'subsub', cat: cur.cat, sub })} />}
-      {user && cur.screen === 'subsub' && <SubSubcategoryScreen user={user} cat={cur.cat} sub={cur.sub} onBack={pop} onOpen={subsub => push({ screen: 'cards', cat: cur.cat, sub: cur.sub, subsub })} />}
-      {user && cur.screen === 'cards'  && <CardsScreen user={user} cat={cur.cat} sub={cur.sub} subsub={cur.subsub} onBack={pop} />}
-    </>
+      {user && cur.screen === 'home'     && <HomeScreen user={user} onOpen={cat => push({ screen: 'sub', cat })} onSettings={() => push({ screen: 'settings' })} />}
+      {user && cur.screen === 'sub'      && <SubcategoryScreen user={user} cat={cur.cat} onBack={pop} onOpen={sub => push({ screen: 'subsub', cat: cur.cat, sub })} />}
+      {user && cur.screen === 'subsub'   && <SubSubcategoryScreen user={user} cat={cur.cat} sub={cur.sub} onBack={pop} onOpen={subsub => push({ screen: 'cards', cat: cur.cat, sub: cur.sub, subsub })} />}
+      {user && cur.screen === 'cards'    && <CardsScreen user={user} cat={cur.cat} sub={cur.sub} subsub={cur.subsub} onBack={pop} />}
+      {user && cur.screen === 'settings' && <SettingsScreen user={user} settings={settings} onSave={s => { setSettings(s); pop() }} onBack={pop} />}
+    </LangContext.Provider>
   )
 }

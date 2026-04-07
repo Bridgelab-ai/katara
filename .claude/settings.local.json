@@ -3,7 +3,8 @@
     "allow": [
       "Bash(cp \"C:/Users/Bridgelab/vocara/api/chat.js\" \"C:/Users/Bridgelab/katara/api/chat.js\")",
       "Bash(cp \"C:/Users/Bridgelab/vocara/vercel.json\" \"C:/Users/Bridgelab/katara/vercel.json\")",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(npx vite:*)"
     ]
   }
 }
