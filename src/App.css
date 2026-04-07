@@ -1,25 +1,117 @@
-/* Katara App styles */
-.grid-bg {
-  background-color: #1C1C1E;
-  background-image:
-    linear-gradient(rgba(74, 144, 217, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(74, 144, 217, 0.045) 1px, transparent 1px);
-  background-size: 48px 48px;
+/* ── Katara — Global Reset & Base ────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #0E111A;
+  color: #ECF0F9;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
 }
 
-/* Drag-over state for file drop zone */
-.drop-zone.drag-over {
-  border-color: #4A90D9 !important;
-  background: rgba(74, 144, 217, 0.08) !important;
+input, textarea, button { font-family: inherit; }
+
+/* ── App background ──────────────────────────────────────────────────────── */
+.app-bg {
+  min-height: 100vh;
+  background: #0E111A;
 }
 
-/* Card flip animation */
-.card-face {
-  transition: all 0.22s ease;
+/* ── Subtle dot grid for accent pages ───────────────────────────────────── */
+.dot-bg {
+  background-color: #0E111A;
+  background-image: radial-gradient(circle, rgba(79,142,247,0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
-/* Focus ring for accessibility */
+/* ── Card flip ────────────────────────────────────────────────────────────  */
+.flip-container { perspective: 900px; }
+
+.flip-inner {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.38s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.flip-inner.flipped { transform: rotateY(180deg); }
+
+.flip-front, .flip-back {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.flip-back { transform: rotateY(180deg); }
+
+/* ── Input / Textarea ─────────────────────────────────────────────────────  */
+input[type="text"], input:not([type]), textarea {
+  width: 100%;
+  background: #0E111A;
+  border: 1px solid #2E3A52;
+  border-radius: 8px;
+  color: #ECF0F9;
+  padding: 9px 13px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  resize: vertical;
+}
+
+input[type="text"]:focus,
+input:not([type]):focus,
+textarea:focus {
+  border-color: #4F8EF7;
+  box-shadow: 0 0 0 3px rgba(79,142,247,0.15);
+}
+
+input::placeholder, textarea::placeholder { color: #4A5675; }
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2E3A52; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3A4A66; }
+
+/* ── Focus ring ───────────────────────────────────────────────────────────  */
 button:focus-visible {
-  outline: 2px solid #4A90D9;
+  outline: 2px solid #4F8EF7;
   outline-offset: 2px;
 }
+
+/* ── Drag-over drop zone ─────────────────────────────────────────────────  */
+.drop-zone { transition: all 0.15s; }
+.drop-zone.drag-over {
+  border-color: #4F8EF7 !important;
+  background: rgba(79,142,247,0.08) !important;
+}
+
+/* ── Progress bar fill animation ─────────────────────────────────────────  */
+.progress-fill {
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Mastery bar colors ──────────────────────────────────────────────────  */
+.mastery-low  { background: #4A5675; }
+.mastery-mid  { background: #4F8EF7; }
+.mastery-high { background: #34D399; }
+
+/* ── Skeleton / loading shimmer ─────────────────────────────────────────  */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #161B27 25%, #1C2233 50%, #161B27 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+/* ── Fade-in ──────────────────────────────────────────────────────────────  */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in { animation: fadeIn 0.22s ease forwards; }
