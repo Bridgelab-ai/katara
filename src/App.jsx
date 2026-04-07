@@ -491,7 +491,7 @@ const CardItem = ({ card, onEdit, onDelete }) => {
   const [hov, setHov] = useState(false)
   const [flipped, setFlipped] = useState(false)
   const m = card.mastery || 0
-  const mColor = m >= 80 ? T.green : m >= 40 ? T.acc : T.textDim
+  const mColor = m >= 3 ? T.green : m >= 2 ? T.acc : m >= 1 ? T.red : T.textDim
 
   return (
     <div
@@ -541,7 +541,7 @@ const CardItem = ({ card, onEdit, onDelete }) => {
         style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, opacity: hov ? 1 : 0, transition: 'opacity 0.15s' }}
         onClick={e => e.stopPropagation()}
       >
-        {m > 0 && <Badge color={mColor}>{m}%</Badge>}
+        {m > 0 && <Badge color={mColor}>{['','✗','✓','★'][m] || m}</Badge>}
         <button
           onClick={onEdit}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textSub, fontSize: 13, padding: '4px', borderRadius: 5 }}
@@ -848,68 +848,290 @@ const KIImportScreen = ({ cardsPath, onSaved, onClose }) => {
 
 // ─── LEARN MODE ───────────────────────────────────────────────────────────────
 const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
-  const [cards] = useState(() => [...initCards].sort(() => Math.random() - 0.5))
-  const [idx,     setIdx]     = useState(0)
-  const [flipped, setFlipped] = useState(false)
-  const [results, setResults] = useState([])
-  const [done,    setDone]    = useState(false)
+  const [phase,       setPhase]       = useState('settings') // settings|loading|session|result
+  const [cardCount,   setCardCount]   = useState(() => Math.min(10, initCards.length))
+  const [learnMode,   setLearnMode]   = useState('klassisch') // 'klassisch'|'ki'
+  const [session,     setSession]     = useState([])
+  const [idx,         setIdx]         = useState(0)
+  const [flipped,     setFlipped]     = useState(false)
+  const [results,     setResults]     = useState([])  // [{id, card, knew}]
+  const [kiError,     setKiError]     = useState('')
+  const [wrongTips,   setWrongTips]   = useState({})  // cardId → tip string
+  const [tipsLoading, setTipsLoading] = useState(false)
 
-  const card = cards[idx]
-  const progress = (idx / cards.length) * 100
+  const countOptions = (() => {
+    const opts = [5, 10, 20].filter(n => n <= initCards.length)
+    if (!opts.includes(initCards.length)) opts.push(initCards.length)
+    return opts
+  })()
 
-  const rate = async (knew) => {
-    const newCorrect = (card.correctCount || 0) + (knew ? 1 : 0)
-    const newWrong   = (card.wrongCount   || 0) + (knew ? 0 : 1)
-    const newMastery = Math.round((newCorrect / (newCorrect + newWrong)) * 100)
-    try {
-      await updateDoc(doc(db, `${cardsPath}/${card.id}`), {
-        correctCount: newCorrect, wrongCount: newWrong,
-        mastery: newMastery, lastReviewed: serverTimestamp(),
-      })
-    } catch (_) {}
-    setResults(r => [...r, { id: card.id, knew }])
-    if (idx + 1 >= cards.length) setDone(true)
-    else { setIdx(i => i + 1); setFlipped(false) }
+  const fetchWrongTips = async (wrongResults) => {
+    if (wrongResults.length === 0) return
+    setTipsLoading(true)
+    const tips = {}
+    for (const { card } of wrongResults) {
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001', max_tokens: 200,
+            messages: [{ role: 'user', content: `Gib eine kurze Merkhilfe (1-2 Sätze, auf Deutsch) für folgende Lernkarte:\nVorderseite: "${card.front}"\nRückseite: "${card.back}${card.backShort ? ` (${card.backShort})` : ''}"\nAntworte NUR mit: "Merkhilfe: ..." — kein weiterer Text.` }],
+          }),
+        })
+        const data = await res.json()
+        tips[card.id] = data.content?.[0]?.text?.trim() || ''
+      } catch (_) {}
+    }
+    setWrongTips(tips)
+    setTipsLoading(false)
   }
 
-  if (done) {
-    const knew = results.filter(r => r.knew).length
-    const pct  = Math.round(knew / cards.length * 100)
+  const startSession = async () => {
+    const count = Math.min(cardCount, initCards.length)
+    setKiError('')
+
+    if (learnMode === 'klassisch') {
+      const shuffled = [...initCards].sort(() => Math.random() - 0.5)
+      setSession(shuffled.slice(0, count))
+      setIdx(0); setFlipped(false); setResults([])
+      setPhase('session')
+      return
+    }
+
+    // KI-Auswahl
+    setPhase('loading')
+    try {
+      const cardList = initCards.map(c => ({
+        id: c.id, front: c.front,
+        mastery: c.mastery || 0,
+        daysSinceReview: c.lastReviewed?.seconds
+          ? Math.floor((Date.now() / 1000 - c.lastReviewed.seconds) / 86400)
+          : null,
+      }))
+      const prompt = `You are a learning optimizer. The user has these flashcards with mastery scores (0=never seen, 1=wrong, 2=correct once, 3=mastered): ${JSON.stringify(cardList)}. Select the ${count} most important cards to study now. Prioritize: cards never seen (mastery 0), then cards answered wrong (mastery 1), then cards not reviewed recently. Return ONLY a JSON array of card IDs in priority order: ["id1","id2",...]`
+      const res = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 512, messages: [{ role: 'user', content: prompt }] }),
+      })
+      const data = await res.json()
+      const raw = data.content?.[0]?.text || ''
+      const match = raw.match(/\[[\s\S]*?\]/)
+      if (!match) throw new Error('Kein gültiges JSON')
+      const ids = JSON.parse(match[0])
+      const cardMap = Object.fromEntries(initCards.map(c => [c.id, c]))
+      const ordered = ids.map(id => cardMap[id]).filter(Boolean)
+      const remaining = initCards.filter(c => !ids.includes(c.id))
+      setSession([...ordered, ...remaining].slice(0, count))
+    } catch (e) {
+      setKiError('KI-Auswahl fehlgeschlagen — klassische Reihenfolge wird verwendet.')
+      const shuffled = [...initCards].sort(() => Math.random() - 0.5)
+      setSession(shuffled.slice(0, count))
+    }
+    setIdx(0); setFlipped(false); setResults([])
+    setPhase('session')
+  }
+
+  const rate = async (knew) => {
+    const card = session[idx]
+    const cur = card.mastery || 0
+    const newMastery = knew
+      ? (cur === 0 ? 2 : Math.min(3, cur + 1))
+      : (cur === 0 ? 1 : Math.max(1, cur - 1))
+    try {
+      await updateDoc(doc(db, `${cardsPath}/${card.id}`), {
+        mastery: newMastery,
+        lastReviewed: serverTimestamp(),
+        wrongCount: knew ? (card.wrongCount || 0) : (card.wrongCount || 0) + 1,
+      })
+    } catch (_) {}
+    const newResults = [...results, { id: card.id, card, knew }]
+    setResults(newResults)
+    if (idx + 1 >= session.length) {
+      setPhase('result')
+      fetchWrongTips(newResults.filter(r => !r.knew))
+    } else {
+      setIdx(i => i + 1)
+      setFlipped(false)
+    }
+  }
+
+  const repeatWrong = (wrongCards) => {
+    setSession(wrongCards)
+    setIdx(0); setFlipped(false); setResults([])
+    setWrongTips({}); setTipsLoading(false)
+    setPhase('session')
+  }
+
+  // ── SETTINGS ─────────────────────────────────────────────────────────────────
+  if (phase === 'settings') {
+    const chipStyle = (active) => ({
+      padding: '9px 18px', borderRadius: T.r, fontSize: 14, fontWeight: 600,
+      border: `1px solid ${active ? T.acc : T.border}`,
+      background: active ? T.accDim : T.s3,
+      color: active ? T.acc : T.textSub,
+      cursor: 'pointer', transition: 'all 0.12s',
+    })
     return (
       <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div className="fade-in" style={{ textAlign: 'center', maxWidth: 440, width: '100%' }}>
-          <div style={{ fontSize: 52, marginBottom: 18 }}>
-            {pct >= 80 ? '🎯' : pct >= 50 ? '📈' : '💪'}
+        <div className="fade-in" style={{ width: '100%', maxWidth: 480 }}>
+          <div style={{ textAlign: 'center', marginBottom: 32 }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>📖</div>
+            <h2 style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Exo 2', sans-serif", color: T.text, marginBottom: 6 }}>Lerneinstellungen</h2>
+            <p style={{ fontSize: 13, color: T.textSub }}>{initCards.length} Karten verfügbar</p>
           </div>
-          <h2 style={{ fontSize: 28, fontWeight: 800, fontFamily: "'Exo 2', sans-serif", color: T.text, marginBottom: 8 }}>
-            Session abgeschlossen
-          </h2>
-          <p style={{ color: T.textSub, marginBottom: 32 }}>{cards.length} Karten durchgearbeitet</p>
 
-          <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r2, padding: '24px 28px', marginBottom: 24 }}>
+          <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r3, padding: '26px 24px 22px', marginBottom: 14 }}>
+            {/* Card count */}
+            <div style={{ marginBottom: 26 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 12 }}>Wie viele Karten?</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {countOptions.map(n => (
+                  <button key={n} onClick={() => setCardCount(n)} style={chipStyle(cardCount === n)}>
+                    {n === initCards.length ? `Alle (${n})` : n}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Mode */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 12 }}>Lernmodus</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[
+                  { key: 'klassisch', icon: '🃏', label: 'Klassisch', desc: 'Karten in zufälliger Reihenfolge' },
+                  { key: 'ki', icon: '✦', label: 'KI-Auswahl', desc: 'KI wählt die wichtigsten Karten für dich' },
+                ].map(({ key, icon, label, desc }) => (
+                  <button key={key} onClick={() => setLearnMode(key)} style={{
+                    ...chipStyle(learnMode === key),
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    textAlign: 'left', padding: '12px 16px',
+                  }}>
+                    <span style={{ fontSize: 20, flexShrink: 0 }}>{icon}</span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: learnMode === key ? T.acc : T.text }}>{label}</div>
+                      <div style={{ fontSize: 12, color: T.textDim, marginTop: 2 }}>{desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {kiError && (
+            <div style={{ fontSize: 13, color: T.red, marginBottom: 10, padding: '10px 14px', background: T.redDim, borderRadius: T.r }}>
+              {kiError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Btn onClick={startSession} full style={{ padding: '14px', fontSize: 15 }}>▶ Starten</Btn>
+            <Btn onClick={onClose} variant="secondary" style={{ padding: '14px 18px', flexShrink: 0 }}>Abbrechen</Btn>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── KI LOADING ───────────────────────────────────────────────────────────────
+  if (phase === 'loading') {
+    return (
+      <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div className="fade-in" style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 42, marginBottom: 16, color: T.acc }}>✦</div>
+          <p style={{ color: T.textSub, fontSize: 14 }}>KI wählt optimale Karten aus…</p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── RESULT ───────────────────────────────────────────────────────────────────
+  if (phase === 'result') {
+    const wrongResults = results.filter(r => !r.knew)
+    const knewCount = results.filter(r => r.knew).length
+    const pct = Math.round(knewCount / session.length * 100)
+    return (
+      <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, overflowY: 'auto' }}>
+        <div style={{ maxWidth: 580, margin: '0 auto', padding: '40px 20px 100px' }}>
+          <div className="fade-in" style={{ textAlign: 'center', marginBottom: 28 }}>
+            <div style={{ fontSize: 52, marginBottom: 14 }}>
+              {pct >= 80 ? '🎯' : pct >= 50 ? '📈' : '💪'}
+            </div>
+            <h2 style={{ fontSize: 26, fontWeight: 800, fontFamily: "'Exo 2', sans-serif", color: T.text, marginBottom: 6 }}>
+              Session abgeschlossen
+            </h2>
+            <p style={{ color: T.textSub }}>{session.length} Karten durchgearbeitet</p>
+          </div>
+
+          {/* Score grid */}
+          <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r2, padding: '22px 28px', marginBottom: 28 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', gap: 16, alignItems: 'center' }}>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 38, fontWeight: 800, color: T.green }}>{knew}</div>
+                <div style={{ fontSize: 36, fontWeight: 800, color: T.green }}>{knewCount}</div>
                 <div style={{ fontSize: 11, color: T.textDim, marginTop: 6, letterSpacing: 1, textTransform: 'uppercase' }}>Gewusst</div>
               </div>
-              <div style={{ width: 1, height: 40, background: T.border }} />
+              <div style={{ width: 1, height: 36, background: T.border }} />
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 38, fontWeight: 800, color: T.red }}>{cards.length - knew}</div>
+                <div style={{ fontSize: 36, fontWeight: 800, color: T.red }}>{wrongResults.length}</div>
                 <div style={{ fontSize: 11, color: T.textDim, marginTop: 6, letterSpacing: 1, textTransform: 'uppercase' }}>Nochmal</div>
               </div>
-              <div style={{ width: 1, height: 40, background: T.border }} />
+              <div style={{ width: 1, height: 36, background: T.border }} />
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 38, fontWeight: 800, color: T.acc }}>{pct}%</div>
+                <div style={{ fontSize: 36, fontWeight: 800, color: T.acc }}>{pct}%</div>
                 <div style={{ fontSize: 11, color: T.textDim, marginTop: 6, letterSpacing: 1, textTransform: 'uppercase' }}>Score</div>
               </div>
             </div>
           </div>
+
+          {/* Wrong cards + KI tips */}
+          {wrongResults.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                Nochmal üben ({wrongResults.length})
+                {tipsLoading && (
+                  <span style={{ fontSize: 12, color: T.textDim, fontWeight: 400 }}>· Merkhilfen werden geladen…</span>
+                )}
+              </div>
+              {wrongResults.map(({ card }) => (
+                <div key={card.id} style={{
+                  background: T.s2, border: `1px solid ${T.border}`,
+                  borderLeft: `3px solid ${T.red}66`,
+                  borderRadius: T.r2, padding: '14px 16px', marginBottom: 10,
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 3 }}>{card.front}</div>
+                  <div style={{ fontSize: 13, color: T.textSub }}>
+                    {card.back}{card.backShort ? ` · ${card.backShort}` : ''}
+                  </div>
+                  {wrongTips[card.id] && (
+                    <div style={{
+                      fontSize: 13, color: T.acc, lineHeight: 1.6,
+                      background: T.accDim, borderRadius: T.r,
+                      padding: '8px 12px', marginTop: 10,
+                    }}>
+                      {wrongTips[card.id]}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              <Btn
+                onClick={() => repeatWrong(wrongResults.map(r => r.card))}
+                variant="ghost" full
+                style={{ marginTop: 6, padding: '12px' }}
+              >
+                🔁 Falsche Karten wiederholen ({wrongResults.length})
+              </Btn>
+            </div>
+          )}
 
           <Btn onClick={onClose} full style={{ padding: '14px', fontSize: 15 }}>Fertig</Btn>
         </div>
       </div>
     )
   }
+
+  // ── SESSION ───────────────────────────────────────────────────────────────────
+  const card = session[idx]
+  const progress = (idx / session.length) * 100
 
   return (
     <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column' }}>
@@ -924,20 +1146,16 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
           ✕ Beenden
         </Btn>
         <div style={{ flex: 1, height: 6, background: T.s4, borderRadius: 3, overflow: 'hidden' }}>
-          <div
-            className="progress-fill"
-            style={{ height: '100%', width: `${progress}%`, background: T.acc, borderRadius: 3 }}
-          />
+          <div className="progress-fill" style={{ height: '100%', width: `${progress}%`, background: T.acc, borderRadius: 3 }} />
         </div>
         <div style={{ fontSize: 13, fontWeight: 600, color: T.textSub, flexShrink: 0 }}>
-          {idx + 1} / {cards.length}
+          {idx + 1} / {session.length}
         </div>
       </div>
 
       {/* Card area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ width: '100%', maxWidth: 580 }}>
-
           {/* Flashcard */}
           <div
             onClick={() => !flipped && setFlipped(true)}
@@ -945,42 +1163,25 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
             style={{
               background: T.s2,
               border: `1px solid ${flipped ? T.acc : T.border}`,
-              borderRadius: T.r3,
-              padding: '52px 40px',
-              minHeight: 260,
-              display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              textAlign: 'center',
-              cursor: flipped ? 'default' : 'pointer',
-              transition: 'border-color 0.22s',
-              marginBottom: 20,
+              borderRadius: T.r3, padding: '52px 40px', minHeight: 260,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              textAlign: 'center', cursor: flipped ? 'default' : 'pointer',
+              transition: 'border-color 0.22s', marginBottom: 20,
               boxShadow: flipped ? `0 0 0 1px ${T.acc}33, 0 16px 40px rgba(0,0,0,0.4)` : '0 8px 24px rgba(0,0,0,0.35)',
             }}
           >
             {!flipped ? (
               <>
-                {card.image && (
-                  <img src={card.image} alt="" style={{ maxHeight: 150, maxWidth: '100%', borderRadius: 10, marginBottom: 22, objectFit: 'contain' }} />
-                )}
-                <div style={{ fontSize: 22, fontWeight: 600, color: T.text, lineHeight: 1.45 }}>
-                  {card.front || '(Bild)'}
-                </div>
-                <div style={{ fontSize: 12, color: T.textDim, marginTop: 24, letterSpacing: 0.5 }}>
-                  Klicken zum Aufdecken
-                </div>
+                {card.image && <img src={card.image} alt="" style={{ maxHeight: 150, maxWidth: '100%', borderRadius: 10, marginBottom: 22, objectFit: 'contain' }} />}
+                <div style={{ fontSize: 22, fontWeight: 600, color: T.text, lineHeight: 1.45 }}>{card.front || '(Bild)'}</div>
+                <div style={{ fontSize: 12, color: T.textDim, marginTop: 24, letterSpacing: 0.5 }}>Klicken zum Aufdecken</div>
               </>
             ) : (
               <>
-                {card.backImage && (
-                  <img src={card.backImage} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 10, marginBottom: 20, objectFit: 'contain' }} />
-                )}
+                {card.backImage && <img src={card.backImage} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 10, marginBottom: 20, objectFit: 'contain' }} />}
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.acc, letterSpacing: 1.6, marginBottom: 14 }}>ANTWORT</div>
-                <div style={{ fontSize: 24, fontWeight: 700, color: T.text, lineHeight: 1.4, marginBottom: 10 }}>
-                  {card.back}
-                </div>
-                {card.backShort && (
-                  <div style={{ fontSize: 16, color: T.acc, fontWeight: 600 }}>{card.backShort}</div>
-                )}
+                <div style={{ fontSize: 24, fontWeight: 700, color: T.text, lineHeight: 1.4, marginBottom: 10 }}>{card.back}</div>
+                {card.backShort && <div style={{ fontSize: 16, color: T.acc, fontWeight: 600 }}>{card.backShort}</div>}
               </>
             )}
           </div>
@@ -988,12 +1189,8 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
           {/* Rating */}
           {flipped && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Btn onClick={() => rate(false)} variant="danger" style={{ padding: '16px', fontSize: 16, borderRadius: T.r2 }}>
-                ✗  Nochmal
-              </Btn>
-              <Btn onClick={() => rate(true)} variant="success" style={{ padding: '16px', fontSize: 16, borderRadius: T.r2 }}>
-                ✓  Gewusst
-              </Btn>
+              <Btn onClick={() => rate(false)} variant="danger" style={{ padding: '16px', fontSize: 16, borderRadius: T.r2 }}>✗  Nochmal</Btn>
+              <Btn onClick={() => rate(true)} variant="success" style={{ padding: '16px', fontSize: 16, borderRadius: T.r2 }}>✓  Gewusst</Btn>
             </div>
           )}
         </div>
@@ -1396,7 +1593,7 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack }) => {
   }
 
   const avgMastery = cards.length
-    ? Math.round(cards.reduce((s, c) => s + (c.mastery || 0), 0) / cards.length)
+    ? Math.round(cards.reduce((s, c) => s + (c.mastery || 0), 0) / cards.length / 3 * 100)
     : 0
 
   return (
