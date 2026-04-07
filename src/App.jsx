@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
+import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   collection, addDoc, getDocs, deleteDoc, doc,
   serverTimestamp, query, orderBy
 } from 'firebase/firestore'
-import { auth, db } from './firebase'
+import { auth, db, provider } from './firebase'
 import './App.css'
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
@@ -213,7 +213,7 @@ const LoginScreen = () => {
   const login = async () => {
     setLoading(true); setError('')
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider())
+      await signInWithPopup(auth, provider)
     } catch (e) {
       setError('Anmeldung fehlgeschlagen. Bitte erneut versuchen.')
       setLoading(false)
