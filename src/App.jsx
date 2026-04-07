@@ -304,7 +304,7 @@ const CtxMenu = ({ items }) => {
 // ─── CREATE / RENAME MODALS ───────────────────────────────────────────────────
 const CreateModal = ({ title, placeholder, onSave, onClose }) => {
   const [name, setName] = useState('')
-  const submit = () => { if (name.trim()) { onSave(name.trim()); onClose() } }
+  const submit = async () => { if (name.trim()) { await onSave(name.trim()); onClose() } }
   return (
     <Modal onClose={onClose}>
       <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 20 }}>{title}</h3>
@@ -1089,8 +1089,14 @@ const HomeScreen = ({ user, onOpen }) => {
   useEffect(() => { load() }, [load])
 
   const create = async name => {
-    await addDoc(collection(db, path), { name, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
-    setModal(false); load()
+    console.log('[Katara] createCategory — writing to Firestore:', path, { name })
+    try {
+      await addDoc(collection(db, path), { name, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+      console.log('[Katara] createCategory — Firestore write successful, reloading list')
+      load()
+    } catch (err) {
+      console.error('[Katara] createCategory — addDoc failed:', err)
+    }
   }
   const remove = async id => {
     if (!confirm('Kategorie und alle Inhalte löschen?')) return
@@ -1184,7 +1190,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
 
   const create = async name => {
     await addDoc(collection(db, path), { name, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
-    setModal(false); load()
+    load()
   }
   const remove = async id => {
     if (!confirm('Gruppe löschen?')) return
@@ -1242,7 +1248,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
 
   const create = async name => {
     await addDoc(collection(db, path), { name, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
-    setModal(false); load()
+    load()
   }
   const remove = async id => {
     if (!confirm('Untergruppe löschen?')) return
