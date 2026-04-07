@@ -359,6 +359,13 @@ const MasteryBar = ({ value, height = 4, style = {} }) => {
   )
 }
 
+// ─── SECTION LABEL ────────────────────────────────────────────────────────────
+const SectionLabel = ({ children }) => (
+  <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>
+    {children}
+  </div>
+)
+
 // ─── FOLDER CARD (grid tile — Level 1) ───────────────────────────────────────
 const FolderCard = ({ item, onClick, onRename, onDelete }) => {
   const [hov, setHov] = useState(false)
@@ -1172,11 +1179,15 @@ const HomeScreen = ({ user, onOpen }) => {
 
 // ─── SUBCATEGORY SCREEN (Level 2) ────────────────────────────────────────────
 const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
-  const [items,    setItems]    = useState([])
-  const [modal,    setModal]    = useState(false)
-  const [renaming, setRenaming] = useState(null)
-  const uid  = user.uid
-  const path = `users/${uid}/categories/${cat.id}/subcategories`
+  const [items,     setItems]     = useState([])
+  const [modal,     setModal]     = useState(false)
+  const [renaming,  setRenaming]  = useState(null)
+  const [cards,     setCards]     = useState([])
+  const [cardModal, setCardModal] = useState(null)
+  const [kiImport,  setKiImport]  = useState(false)
+  const uid       = user.uid
+  const path      = `users/${uid}/categories/${cat.id}/subcategories`
+  const cardsPath = `users/${uid}/categories/${cat.id}/cards`
 
   const load = useCallback(async () => {
     const docs = await loadDocs(path)
@@ -1184,7 +1195,8 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
       docs.map(async d => ({ ...d, _count: await countDocs(`${path}/${d.id}/subsubcategories`) }))
     )
     setItems(enriched)
-  }, [path])
+    setCards(await loadDocs(cardsPath))
+  }, [path, cardsPath])
 
   useEffect(() => { load() }, [load])
 
@@ -1199,42 +1211,79 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
   const rename = async (id, name) => {
     await updateDoc(doc(db, `${path}/${id}`), { name }); setRenaming(null); load()
   }
+  const saveCard = async data => {
+    if (cardModal === 'new')
+      await addDoc(collection(db, cardsPath), { ...data, correctCount: 0, wrongCount: 0, mastery: 0, lastReviewed: null, createdAt: serverTimestamp() })
+    else
+      await updateDoc(doc(db, `${cardsPath}/${cardModal.id}`), data)
+    setCardModal(null); load()
+  }
+  const removeCard = async id => {
+    if (!confirm('Karte löschen?')) return
+    await deleteDoc(doc(db, `${cardsPath}/${id}`)); load()
+  }
 
   return (
-    <div className="app-bg" style={{ minHeight: '100vh' }}>
+    <div className="app-bg" style={{ minHeight: '100vh', paddingBottom: 60 }}>
       <Header
         crumbs={['Start', cat.name]}
         onBack={onBack}
-        right={<Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>+ Neue Gruppe</Btn>}
+        right={
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>📥 Karten erstellen</Btn>
+            <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '7px 12px', fontSize: 13 }}>+ Karte</Btn>
+            <Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>+ Neue Gruppe</Btn>
+          </div>
+        }
       />
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 24px' }}>
-        {items.length === 0
-          ? <Empty icon="🗂️" title="Keine Gruppen" sub="Erstelle Gruppen um Inhalte zu strukturieren." />
-          : items.map(item => (
-            <FolderRow
-              key={item.id} item={item}
-              countLabel={`${item._count || 0} Untergruppen`}
-              accentColor="#7BB8FF"
-              onClick={() => onOpen(item)}
-              onRename={() => setRenaming(item)}
-              onDelete={() => remove(item.id)}
-            />
-          ))
+        {items.length === 0 && cards.length === 0
+          ? <Empty icon="🗂️" title="Noch leer" sub="Erstelle Gruppen oder füge Karten direkt hier hinzu." />
+          : null
         }
+        {items.length > 0 && (
+          <>
+            <SectionLabel>Gruppen</SectionLabel>
+            {items.map(item => (
+              <FolderRow
+                key={item.id} item={item}
+                countLabel={`${item._count || 0} Untergruppen`}
+                accentColor="#7BB8FF"
+                onClick={() => onOpen(item)}
+                onRename={() => setRenaming(item)}
+                onDelete={() => remove(item.id)}
+              />
+            ))}
+          </>
+        )}
+        {cards.length > 0 && (
+          <div style={{ marginTop: items.length > 0 ? 28 : 0 }}>
+            <SectionLabel>Karten ({cards.length})</SectionLabel>
+            {cards.map(c => (
+              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} />
+            ))}
+          </div>
+        )}
       </div>
-      {modal    && <CreateModal title="Neue Gruppe" placeholder="z.B. Hauptsignale" onSave={create} onClose={() => setModal(false)} />}
-      {renaming && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
+      {modal     && <CreateModal title="Neue Gruppe" placeholder="z.B. Hauptsignale" onSave={create} onClose={() => setModal(false)} />}
+      {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
+      {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {kiImport  && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
     </div>
   )
 }
 
 // ─── SUBSUBCATEGORY SCREEN (Level 3) ─────────────────────────────────────────
 const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
-  const [items,    setItems]    = useState([])
-  const [modal,    setModal]    = useState(false)
-  const [renaming, setRenaming] = useState(null)
-  const uid  = user.uid
-  const path = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories`
+  const [items,     setItems]     = useState([])
+  const [modal,     setModal]     = useState(false)
+  const [renaming,  setRenaming]  = useState(null)
+  const [cards,     setCards]     = useState([])
+  const [cardModal, setCardModal] = useState(null)
+  const [kiImport,  setKiImport]  = useState(false)
+  const uid       = user.uid
+  const path      = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories`
+  const cardsPath = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/cards`
 
   const load = useCallback(async () => {
     const docs = await loadDocs(path)
@@ -1242,7 +1291,8 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
       docs.map(async d => ({ ...d, _count: await countDocs(`${path}/${d.id}/cards`) }))
     )
     setItems(enriched)
-  }, [path])
+    setCards(await loadDocs(cardsPath))
+  }, [path, cardsPath])
 
   useEffect(() => { load() }, [load])
 
@@ -1257,31 +1307,64 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
   const rename = async (id, name) => {
     await updateDoc(doc(db, `${path}/${id}`), { name }); setRenaming(null); load()
   }
+  const saveCard = async data => {
+    if (cardModal === 'new')
+      await addDoc(collection(db, cardsPath), { ...data, correctCount: 0, wrongCount: 0, mastery: 0, lastReviewed: null, createdAt: serverTimestamp() })
+    else
+      await updateDoc(doc(db, `${cardsPath}/${cardModal.id}`), data)
+    setCardModal(null); load()
+  }
+  const removeCard = async id => {
+    if (!confirm('Karte löschen?')) return
+    await deleteDoc(doc(db, `${cardsPath}/${id}`)); load()
+  }
 
   return (
-    <div className="app-bg" style={{ minHeight: '100vh' }}>
+    <div className="app-bg" style={{ minHeight: '100vh', paddingBottom: 60 }}>
       <Header
         crumbs={['Start', cat.name, sub.name]}
         onBack={onBack}
-        right={<Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>+ Neue Untergruppe</Btn>}
+        right={
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>📥 Karten erstellen</Btn>
+            <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '7px 12px', fontSize: 13 }}>+ Karte</Btn>
+            <Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>+ Neue Untergruppe</Btn>
+          </div>
+        }
       />
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 24px' }}>
-        {items.length === 0
-          ? <Empty icon="📂" title="Keine Untergruppen" sub="Erstelle Untergruppen für deine Karten." />
-          : items.map(item => (
-            <FolderRow
-              key={item.id} item={item}
-              countLabel={`${item._count || 0} Karten`}
-              accentColor={T.amber}
-              onClick={() => onOpen(item)}
-              onRename={() => setRenaming(item)}
-              onDelete={() => remove(item.id)}
-            />
-          ))
+        {items.length === 0 && cards.length === 0
+          ? <Empty icon="📂" title="Noch leer" sub="Erstelle Untergruppen oder füge Karten direkt hier hinzu." />
+          : null
         }
+        {items.length > 0 && (
+          <>
+            <SectionLabel>Untergruppen</SectionLabel>
+            {items.map(item => (
+              <FolderRow
+                key={item.id} item={item}
+                countLabel={`${item._count || 0} Karten`}
+                accentColor={T.amber}
+                onClick={() => onOpen(item)}
+                onRename={() => setRenaming(item)}
+                onDelete={() => remove(item.id)}
+              />
+            ))}
+          </>
+        )}
+        {cards.length > 0 && (
+          <div style={{ marginTop: items.length > 0 ? 28 : 0 }}>
+            <SectionLabel>Karten ({cards.length})</SectionLabel>
+            {cards.map(c => (
+              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} />
+            ))}
+          </div>
+        )}
       </div>
-      {modal    && <CreateModal title="Neue Untergruppe" placeholder="z.B. Hp-Begriffe" onSave={create} onClose={() => setModal(false)} />}
-      {renaming && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
+      {modal     && <CreateModal title="Neue Untergruppe" placeholder="z.B. Hp-Begriffe" onSave={create} onClose={() => setModal(false)} />}
+      {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
+      {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {kiImport  && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
     </div>
   )
 }
