@@ -742,18 +742,24 @@ const KIImportScreen = ({ cardsPath, onSaved, onClose }) => {
     setLoading(true); setError(''); setPreview(null)
     try {
       const ext = (file?.name || '').split('.').pop().toLowerCase()
-      const jsonPrompt = '\n\nAntworte NUR mit einem JSON-Array (kein Markdown):\n[{"front":"...","back":"...","backShort":"..."}]'
+      const jsonPrompt = '\n\nCreate flashcards from this document. Return ONLY a valid JSON array, no markdown, no explanation:\n[{"front":"...","back":"...","backShort":"..."}]'
       let content
 
       if (file && ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
         const b64 = await toBase64(file)
         content = [
           { type: 'image', source: { type: 'base64', media_type: file.type || 'image/jpeg', data: b64.split(',')[1] } },
-          { type: 'text', text: (instr || 'Erstelle Lernkarten aus diesem Bild.') + jsonPrompt },
+          { type: 'text', text: (instr || 'Create flashcards from this image.') + jsonPrompt },
+        ]
+      } else if (file && ext === 'pdf') {
+        const b64 = await toBase64(file)
+        content = [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64.split(',')[1] } },
+          { type: 'text', text: (instr ? instr + '\n\n' : '') + jsonPrompt },
         ]
       } else {
         const text = file ? await toText(file) : ''
-        content = [{ type: 'text', text: `${instr || 'Erstelle Lernkarten aus diesem Dokument.'}${text ? `\n\nDokument:\n${text.slice(0, 14000)}` : ''}${jsonPrompt}` }]
+        content = [{ type: 'text', text: `${instr || ''}${text ? `\n\nDokument:\n${text.slice(0, 14000)}` : ''}${jsonPrompt}` }]
       }
 
       const res = await fetch('/api/chat', {
