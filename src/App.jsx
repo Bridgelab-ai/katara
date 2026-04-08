@@ -675,7 +675,6 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor 
 // ─── CARD LIST ITEM ───────────────────────────────────────────────────────────
 const CardItem = ({ card, onEdit, onDelete }) => {
   const [hov, setHov] = useState(false)
-  const [flipped, setFlipped] = useState(false)
   const m = card.mastery || 0
   const mColor = m >= 3 ? T.green : m >= 2 ? T.acc : m >= 1 ? T.red : T.textDim
 
@@ -683,78 +682,61 @@ const CardItem = ({ card, onEdit, onDelete }) => {
     <div
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      onClick={() => setFlipped(f => !f)}
       style={{
         background: hov ? T.s3 : T.s2,
-        border: `1px solid ${T.border}`,
+        border: `1px solid ${hov ? T.borderHov : T.border}`,
         borderLeft: m > 0 ? `3px solid ${mColor}88` : `3px solid ${T.border}`,
         borderRadius: T.r2,
-        padding: '13px 16px',
-        cursor: 'pointer',
-        transition: 'background 0.15s',
-        display: 'flex', alignItems: 'flex-start', gap: 14,
+        padding: '11px 14px',
+        transition: 'background 0.15s, border-color 0.15s',
+        display: 'flex', alignItems: 'center', gap: 12,
         marginBottom: 8,
       }}
     >
+      {/* Front image */}
+      {card.image && (
+        <img src={card.image} alt="" style={{
+          width: 38, height: 38, objectFit: 'cover',
+          borderRadius: 6, flexShrink: 0, border: `1px solid ${T.border}`,
+        }} />
+      )}
+
+      {/* Content: front + back preview */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        {!flipped ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {card.image && (
-              <img src={card.image} alt="" style={{
-                width: 46, height: 46, objectFit: 'cover',
-                borderRadius: 7, flexShrink: 0,
-                border: `1px solid ${T.border}`,
-              }} />
-            )}
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, marginBottom: 4 }}>VORDERSEITE</div>
-              <div style={{ fontSize: 14, color: T.text }}>{card.front || '(nur Bild)'}</div>
-            </div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {card.front || '(Bild)'}
+        </div>
+        {card.back && (
+          <div style={{ fontSize: 12, color: T.textSub, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            → {card.back}{card.backShort ? ` · ${card.backShort}` : ''}
           </div>
-        ) : (
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: T.acc, letterSpacing: 1.2, marginBottom: 6 }}>RÜCKSEITE</div>
-            {card.backImage && (
-              <img src={card.backImage} alt="" style={{ maxHeight: 56, borderRadius: 6, marginBottom: 6, border: `1px solid ${T.border}` }} />
-            )}
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: 14, color: T.text, fontWeight: 600 }}>{card.back}</div>
-                {card.backShort && <div style={{ fontSize: 12, color: T.acc, marginTop: 3 }}>{card.backShort}</div>}
-                {(card.pronunciation_de || card.pronunciation_en) && (
-                  <div style={{ marginTop: 7, fontSize: 12, color: T.textSub, lineHeight: 1.7 }}>
-                    {card.pronunciation_de && <div>🇩🇪 {card.pronunciation_de}</div>}
-                    {card.pronunciation_en && <div>🇬🇧 {card.pronunciation_en}</div>}
-                  </div>
-                )}
-              </div>
-              <TtsBtn text={card.back} lang="de-DE" />
-            </div>
+        )}
+        {(card.pronunciation_de || card.pronunciation_en) && (
+          <div style={{ fontSize: 11, color: T.textDim, marginTop: 3 }}>
+            {card.pronunciation_de && `🇩🇪 ${card.pronunciation_de}`}
+            {card.pronunciation_de && card.pronunciation_en && ' · '}
+            {card.pronunciation_en && `🇬🇧 ${card.pronunciation_en}`}
           </div>
         )}
       </div>
 
-      <div
-        style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, opacity: hov ? 1 : 0, transition: 'opacity 0.15s' }}
-        onClick={e => e.stopPropagation()}
-      >
+      {/* Mastery + actions — always visible */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         {m > 0 && <Badge color={mColor}>{['','✗','✓','★'][m] || m}</Badge>}
         <button
-          onClick={onEdit}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textSub, fontSize: 13, padding: '4px', borderRadius: 5 }}
+          onClick={e => { e.stopPropagation(); onEdit() }}
+          title="Bearbeiten"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textSub, fontSize: 14, padding: '4px 6px', borderRadius: 5, transition: 'color 0.12s' }}
           onMouseEnter={e => e.currentTarget.style.color = T.acc}
           onMouseLeave={e => e.currentTarget.style.color = T.textSub}
-        >
-          ✏
-        </button>
+        >✏</button>
         <button
-          onClick={onDelete}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textDim, fontSize: 13, padding: '4px', borderRadius: 5 }}
+          onClick={e => { e.stopPropagation(); onDelete() }}
+          title="Löschen"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textDim, fontSize: 15, padding: '4px 6px', borderRadius: 5, transition: 'color 0.12s' }}
           onMouseEnter={e => e.currentTarget.style.color = T.red}
           onMouseLeave={e => e.currentTarget.style.color = T.textDim}
-        >
-          ✕
-        </button>
+        >🗑</button>
       </div>
     </div>
   )
@@ -1886,13 +1868,14 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
 }
 
 // ─── SUBCATEGORY SCREEN (Level 2) ────────────────────────────────────────────
-const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
+const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
   const [items,     setItems]     = useState([])
   const [modal,     setModal]     = useState(false)
   const [renaming,  setRenaming]  = useState(null)
   const [cards,     setCards]     = useState([])
   const [cardModal, setCardModal] = useState(null)
   const [kiImport,  setKiImport]  = useState(false)
+  const [learning,  setLearning]  = useState(false)
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories`
@@ -1937,6 +1920,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
       <Header
         crumbs={['Start', cat.name]}
         onBack={onBack}
+        onNavigate={onNavigate}
         right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>{t.kiCreate}</Btn>
@@ -1969,7 +1953,14 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
         )}
         {cards.length > 0 && (
           <div style={{ marginTop: items.length > 0 ? 28 : 0 }}>
-            <SectionLabel>{t.cards} ({cards.length})</SectionLabel>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                {t.cards} ({cards.length})
+              </div>
+              <Btn onClick={() => setLearning(true)} variant="success" style={{ padding: '7px 18px', fontSize: 13 }}>
+                {t.learn}
+              </Btn>
+            </div>
             {cards.map(c => (
               <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} />
             ))}
@@ -1979,6 +1970,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
       {modal     && <CreateModal title={t.newGroup.replace('+ ','')} placeholder="z.B. Hauptsignale" onSave={create} onClose={() => setModal(false)} />}
       {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {learning  && <LearnMode cards={cards} cardsPath={cardsPath} onClose={() => { setLearning(false); load() }} />}
       {kiImport  && (
         <KIImportScreen
           cardsPath={cardsPath}
@@ -1995,13 +1987,14 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
 }
 
 // ─── SUBSUBCATEGORY SCREEN (Level 3) ─────────────────────────────────────────
-const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
+const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) => {
   const [items,     setItems]     = useState([])
   const [modal,     setModal]     = useState(false)
   const [renaming,  setRenaming]  = useState(null)
   const [cards,     setCards]     = useState([])
   const [cardModal, setCardModal] = useState(null)
   const [kiImport,  setKiImport]  = useState(false)
+  const [learning,  setLearning]  = useState(false)
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories`
@@ -2046,6 +2039,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
       <Header
         crumbs={['Start', cat.name, sub.name]}
         onBack={onBack}
+        onNavigate={onNavigate}
         right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>{t.kiCreate}</Btn>
@@ -2078,7 +2072,14 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
         )}
         {cards.length > 0 && (
           <div style={{ marginTop: items.length > 0 ? 28 : 0 }}>
-            <SectionLabel>{t.cards} ({cards.length})</SectionLabel>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                {t.cards} ({cards.length})
+              </div>
+              <Btn onClick={() => setLearning(true)} variant="success" style={{ padding: '7px 18px', fontSize: 13 }}>
+                {t.learn}
+              </Btn>
+            </div>
             {cards.map(c => (
               <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} />
             ))}
@@ -2088,6 +2089,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
       {modal     && <CreateModal title={t.newSubgroup.replace('+ ','')} placeholder="z.B. Hp-Begriffe" onSave={create} onClose={() => setModal(false)} />}
       {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {learning  && <LearnMode cards={cards} cardsPath={cardsPath} onClose={() => { setLearning(false); load() }} />}
       {kiImport  && (
         <KIImportScreen
           cardsPath={cardsPath}
@@ -2104,7 +2106,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
 }
 
 // ─── CARDS SCREEN ─────────────────────────────────────────────────────────────
-const CardsScreen = ({ user, cat, sub, subsub, onBack }) => {
+const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
   const [cards,     setCards]     = useState([])
   const [cardModal, setCardModal] = useState(null)
   const [kiImport,  setKiImport]  = useState(false)
@@ -2136,7 +2138,7 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack }) => {
 
   return (
     <div className="app-bg" style={{ minHeight: '100vh', paddingBottom: 60 }}>
-      <Header crumbs={['Start', cat.name, sub.name, subsub.name]} onBack={onBack} />
+      <Header crumbs={['Start', cat.name, sub.name, subsub.name]} onBack={onBack} onNavigate={onNavigate} />
 
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 24px' }}>
         {/* Action bar */}
@@ -2206,10 +2208,11 @@ export default function App() {
       .catch(() => {})
   }, [user?.uid])
 
-  const push = entry => setNav(n => [...n, entry])
-  const pop  = () => setNav(n => n.length > 1 ? n.slice(0, -1) : n)
-  const cur  = nav[nav.length - 1]
-  const lang = LANG[settings.lang] || LANG.de
+  const push  = entry => setNav(n => [...n, entry])
+  const pop   = () => setNav(n => n.length > 1 ? n.slice(0, -1) : n)
+  const goTo  = i => setNav(n => n.slice(0, i + 1))
+  const cur   = nav[nav.length - 1]
+  const lang  = LANG[settings.lang] || LANG.de
 
   if (user === undefined) {
     return (
@@ -2225,9 +2228,9 @@ export default function App() {
       <BridgelabBtn />
       {!user && <LoginScreen />}
       {user && cur.screen === 'home'     && <HomeScreen user={user} onOpen={cat => push({ screen: 'sub', cat })} onSettings={() => push({ screen: 'settings' })} />}
-      {user && cur.screen === 'sub'      && <SubcategoryScreen user={user} cat={cur.cat} onBack={pop} onOpen={sub => push({ screen: 'subsub', cat: cur.cat, sub })} />}
-      {user && cur.screen === 'subsub'   && <SubSubcategoryScreen user={user} cat={cur.cat} sub={cur.sub} onBack={pop} onOpen={subsub => push({ screen: 'cards', cat: cur.cat, sub: cur.sub, subsub })} />}
-      {user && cur.screen === 'cards'    && <CardsScreen user={user} cat={cur.cat} sub={cur.sub} subsub={cur.subsub} onBack={pop} />}
+      {user && cur.screen === 'sub'      && <SubcategoryScreen user={user} cat={cur.cat} onBack={pop} onNavigate={goTo} onOpen={sub => push({ screen: 'subsub', cat: cur.cat, sub })} />}
+      {user && cur.screen === 'subsub'   && <SubSubcategoryScreen user={user} cat={cur.cat} sub={cur.sub} onBack={pop} onNavigate={goTo} onOpen={subsub => push({ screen: 'cards', cat: cur.cat, sub: cur.sub, subsub })} />}
+      {user && cur.screen === 'cards'    && <CardsScreen user={user} cat={cur.cat} sub={cur.sub} subsub={cur.subsub} onBack={pop} onNavigate={goTo} />}
       {user && cur.screen === 'settings' && <SettingsScreen user={user} settings={settings} onSave={s => { setSettings(s); pop() }} onBack={pop} />}
     </LangContext.Provider>
   )
