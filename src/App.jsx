@@ -722,45 +722,61 @@ const CardModal = ({ initial, onSave, onClose }) => {
 }
 
 // ─── KI IMPORT SCREEN ─────────────────────────────────────────────────────────
-const KIImportScreen = ({ cardsPath, onSaved, onClose }) => {
-  const [file,     setFile]     = useState(null)
-  const [instr,    setInstr]    = useState('')
-  const [dragOver, setDragOver] = useState(false)
-  const [loading,  setLoading]  = useState(false)
-  const [preview,  setPreview]  = useState(null)
-  const [error,    setError]    = useState('')
-  const [saving,   setSaving]   = useState(false)
+// destinations: [{ label, path }] — if omitted, saves everything to cardsPath
+const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose }) => {
+  const destList = destinations.length > 0 ? destinations : [{ label: 'Hier', path: cardsPath }]
+
+  const [files,     setFiles]     = useState([])
+  const [instr,     setInstr]     = useState('')
+  const [sortInstr, setSortInstr] = useState('')
+  const [dropOver,  setDropOver]  = useState(false)
+  const [loading,   setLoading]   = useState(false)
+  const [preview,   setPreview]   = useState(null) // [{front,back,backShort,_dest}]
+  const [error,     setError]     = useState('')
+  const [saving,    setSaving]    = useState(false)
+  const [dragIdx,   setDragIdx]   = useState(null)
   const fileRef = useRef(null)
 
-  const handleDrop = e => {
-    e.preventDefault(); setDragOver(false)
-    const f = e.dataTransfer.files[0]; if (f) setFile(f)
+  const addFiles = newFiles => {
+    setFiles(prev => {
+      const seen = new Set(prev.map(f => f.name + f.size))
+      return [...prev, ...Array.from(newFiles).filter(f => !seen.has(f.name + f.size))]
+    })
+  }
+
+  const fileIcon = f => {
+    const ext = f.name.split('.').pop().toLowerCase()
+    if (ext === 'pdf') return '📄'
+    if (['jpg','jpeg','png','gif','webp'].includes(ext)) return '🖼️'
+    return '📝'
   }
 
   const generate = async () => {
-    if (!file && !instr.trim()) return
+    if (files.length === 0 && !instr.trim()) return
     setLoading(true); setError(''); setPreview(null)
     try {
-      const ext = (file?.name || '').split('.').pop().toLowerCase()
-      const jsonPrompt = '\n\nCreate flashcards from this document. Return ONLY a valid JSON array, no markdown, no explanation:\n[{"front":"...","back":"...","backShort":"..."}]'
-      let content
+      const content = []
 
-      if (file && ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
-        const b64 = await toBase64(file)
-        content = [
-          { type: 'image', source: { type: 'base64', media_type: file.type || 'image/jpeg', data: b64.split(',')[1] } },
-          { type: 'text', text: (instr || 'Create flashcards from this image.') + jsonPrompt },
-        ]
-      } else if (file && ext === 'pdf') {
-        const b64 = await toBase64(file)
-        content = [
-          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64.split(',')[1] } },
-          { type: 'text', text: (instr ? instr + '\n\n' : '') + jsonPrompt },
-        ]
-      } else {
-        const text = file ? await toText(file) : ''
-        content = [{ type: 'text', text: `${instr || ''}${text ? `\n\nDokument:\n${text.slice(0, 14000)}` : ''}${jsonPrompt}` }]
+      for (const file of files) {
+        const ext = file.name.split('.').pop().toLowerCase()
+        if (['jpg','jpeg','png','gif','webp'].includes(ext)) {
+          const b64 = await toBase64(file)
+          content.push({ type: 'image', source: { type: 'base64', media_type: file.type || 'image/jpeg', data: b64.split(',')[1] } })
+        } else if (ext === 'pdf') {
+          const b64 = await toBase64(file)
+          content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64.split(',')[1] } })
+        } else {
+          const text = await toText(file)
+          content.push({ type: 'text', text: `--- ${file.name} ---\n${text.slice(0, 14000)}` })
+        }
       }
+
+      const sortPart = sortInstr.trim() ? `\nSorting instruction: ${sortInstr.trim()}` : ''
+      const instrPart = instr.trim() ? `${instr.trim()}\n\n` : ''
+      content.push({
+        type: 'text',
+        text: `${instrPart}Create flashcards from the above content.${sortPart}\n\nReturn ONLY a valid JSON array, no markdown, no explanation:\n[{"front":"...","back":"...","backShort":"..."}]`,
+      })
 
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -769,11 +785,11 @@ const KIImportScreen = ({ cardsPath, onSaved, onClose }) => {
       })
       const data = await res.json()
       const raw = data.content?.[0]?.text || ''
-      const match = raw.match(/\[[\s\S]*?\]/)
+      const match = raw.match(/\[[\s\S]*\]/)
       if (!match) throw new Error('KI hat kein gültiges JSON zurückgegeben. Versuche eine genauere Anweisung.')
       const cards = JSON.parse(match[0])
       if (!Array.isArray(cards) || cards.length === 0) throw new Error('Keine Karten gefunden.')
-      setPreview(cards)
+      setPreview(cards.map(c => ({ ...c, _dest: destList[0].path })))
     } catch (e) {
       setError(e.message)
     } finally {
@@ -781,10 +797,12 @@ const KIImportScreen = ({ cardsPath, onSaved, onClose }) => {
     }
   }
 
+  const upd = (i, field, val) => setPreview(p => p.map((c, idx) => idx === i ? { ...c, [field]: val } : c))
+
   const saveAll = async () => {
     setSaving(true)
     for (const c of preview) {
-      await addDoc(collection(db, cardsPath), {
+      await addDoc(collection(db, c._dest), {
         front: c.front || '', image: null,
         back: c.back || c.front || '', backShort: c.backShort || '',
         backImage: null, correctCount: 0, wrongCount: 0,
@@ -795,110 +813,219 @@ const KIImportScreen = ({ cardsPath, onSaved, onClose }) => {
     onSaved()
   }
 
-  const upd = (i, field, val) => setPreview(p => p.map((c, idx) => idx === i ? { ...c, [field]: val } : c))
+  // Card drag-to-reorder
+  const onCardDragStart = (e, i) => { setDragIdx(i); e.dataTransfer.effectAllowed = 'move' }
+  const onCardDragOver  = (e, i) => {
+    e.preventDefault()
+    if (dragIdx === null || dragIdx === i) return
+    setPreview(p => {
+      const next = [...p]; const [moved] = next.splice(dragIdx, 1); next.splice(i, 0, moved); return next
+    })
+    setDragIdx(i)
+  }
+  const onCardDragEnd = () => setDragIdx(null)
+
+  const SLabel = ({ children }) => (
+    <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>
+      {children}
+    </div>
+  )
+  const FLabel = ({ children }) => (
+    <div style={{ fontSize: 10, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, marginBottom: 7 }}>{children}</div>
+  )
 
   return (
     <div className="app-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, overflowY: 'auto' }}>
-      <div style={{ maxWidth: 800, margin: '0 auto', padding: '0 20px 80px' }}>
+      <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 20px 80px' }}>
         <Header title="KI-Kartengenerator" onBack={onClose} />
 
         <div style={{ padding: '32px 0' }}>
           {!preview ? (
             <div className="fade-in">
-              {/* Drop zone */}
-              <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>
-                Datei hochladen
-              </div>
+
+              {/* ── Drop zone ── */}
+              <SLabel>Dateien hochladen</SLabel>
               <div
-                className={`drop-zone${dragOver ? ' drag-over' : ''}`}
-                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
+                className={`drop-zone${dropOver ? ' drag-over' : ''}`}
+                onDragOver={e => { e.preventDefault(); setDropOver(true) }}
+                onDragLeave={() => setDropOver(false)}
+                onDrop={e => { e.preventDefault(); setDropOver(false); addFiles(e.dataTransfer.files) }}
                 onClick={() => fileRef.current?.click()}
                 style={{
-                  border: `2px dashed ${dragOver ? T.acc : T.border}`,
-                  borderRadius: T.r2, padding: '40px 28px',
-                  textAlign: 'center', cursor: 'pointer', marginBottom: 24,
-                  background: dragOver ? T.accDim : T.s1,
+                  border: `2px dashed ${dropOver ? T.acc : T.border}`,
+                  borderRadius: T.r2,
+                  padding: files.length > 0 ? '18px 24px' : '40px 28px',
+                  textAlign: files.length > 0 ? 'left' : 'center',
+                  cursor: 'pointer', marginBottom: 10,
+                  background: dropOver ? T.accDim : T.s1,
+                  transition: 'all 0.15s',
                 }}
               >
-                <div style={{ fontSize: 32, marginBottom: 10 }}>
-                  {file ? '📎' : '📂'}
-                </div>
-                <div style={{ color: T.textSub, fontSize: 14, marginBottom: 4 }}>
-                  {file
-                    ? <><strong style={{ color: T.text }}>{file.name}</strong> <span style={{ color: T.textDim }}>({(file.size / 1024).toFixed(0)} KB)</span></>
-                    : 'Datei hier ablegen oder klicken'}
-                </div>
-                <div style={{ fontSize: 12, color: T.textDim }}>PDF · TXT · CSV · JPG · PNG · WEBP</div>
+                {files.length === 0 ? (
+                  <>
+                    <div style={{ fontSize: 32, marginBottom: 10 }}>📂</div>
+                    <div style={{ color: T.textSub, fontSize: 14, marginBottom: 4 }}>Dateien hier ablegen oder klicken</div>
+                    <div style={{ fontSize: 12, color: T.textDim }}>PDF · TXT · CSV · JPG · PNG · WEBP — mehrere Dateien möglich</div>
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>📎</span>
+                    <span style={{ fontSize: 13, color: T.textSub }}>
+                      {files.length} Datei{files.length !== 1 ? 'en' : ''} — hier klicken um weitere hinzuzufügen
+                    </span>
+                  </div>
+                )}
                 <input
-                  ref={fileRef} type="file"
+                  ref={fileRef} type="file" multiple
                   accept=".pdf,.txt,.csv,.jpg,.jpeg,.png,.gif,.webp"
-                  onChange={e => setFile(e.target.files[0])}
+                  onChange={e => addFiles(e.target.files)}
                   style={{ display: 'none' }}
                 />
               </div>
 
-              {/* Instruction */}
-              <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>
-                Anweisung an die KI
-              </div>
+              {/* ── File list ── */}
+              {files.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  {files.map((f, i) => (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 12px', marginBottom: 4,
+                      background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r,
+                    }}>
+                      <span style={{ fontSize: 15, flexShrink: 0 }}>{fileIcon(f)}</span>
+                      <span style={{ flex: 1, fontSize: 13, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                      <span style={{ fontSize: 12, color: T.textDim, flexShrink: 0 }}>{(f.size / 1024).toFixed(0)} KB</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); setFiles(fs => fs.filter((_, fi) => fi !== i)) }}
+                        style={{ background: 'none', border: 'none', color: T.textDim, cursor: 'pointer', fontSize: 14, padding: '2px 5px', borderRadius: 4, flexShrink: 0, transition: 'color 0.12s' }}
+                        onMouseEnter={e => e.currentTarget.style.color = T.red}
+                        onMouseLeave={e => e.currentTarget.style.color = T.textDim}
+                      >✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── Content instruction ── */}
+              <SLabel>Anweisung an die KI</SLabel>
               <textarea
                 value={instr}
                 onChange={e => setInstr(e.target.value)}
-                rows={5}
-                placeholder="z.B. Erstelle Lernkarten aus diesem Dokument. Vorderseite = Frage oder Begriff, Rückseite = Antwort. Jeder Punkt bekommt eine eigene Karte."
+                rows={4}
+                placeholder="z.B. Vorderseite = Fachbegriff, Rückseite = Definition. Jeden Begriff als eigene Karte."
+                style={{ marginBottom: 16 }}
+              />
+
+              {/* ── Sort instruction ── */}
+              <SLabel>Sortier-Anweisung (optional)</SLabel>
+              <textarea
+                value={sortInstr}
+                onChange={e => setSortInstr(e.target.value)}
+                rows={2}
+                placeholder="z.B. Sortiere nach Schwierigkeit: einfach zuerst. Oder: Gruppiere nach Thema."
                 style={{ marginBottom: 22 }}
               />
 
               {error && (
-                <div style={{
-                  padding: '12px 16px', marginBottom: 18, borderRadius: T.r,
-                  background: T.redDim, border: `1px solid rgba(248,113,113,0.3)`,
-                  color: T.red, fontSize: 13,
-                }}>
+                <div style={{ padding: '12px 16px', marginBottom: 18, borderRadius: T.r, background: T.redDim, border: `1px solid rgba(248,113,113,0.3)`, color: T.red, fontSize: 13 }}>
                   {error}
                 </div>
               )}
 
-              <Btn onClick={generate} disabled={loading || (!file && !instr.trim())} full style={{ padding: '14px', fontSize: 15 }}>
+              <Btn
+                onClick={generate}
+                disabled={loading || (files.length === 0 && !instr.trim())}
+                full style={{ padding: '14px', fontSize: 15 }}
+              >
                 {loading
                   ? <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> KI analysiert…</>
                   : '✦  Karten generieren'}
               </Btn>
             </div>
+
           ) : (
             <div className="fade-in">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div style={{ fontSize: 15, color: T.text }}>
-                  <strong style={{ color: T.acc }}>{preview.length} Karten</strong> generiert — prüfen und anpassen:
+                  <strong style={{ color: T.acc }}>{preview.length} Karten</strong> generiert
                 </div>
                 <Btn onClick={() => setPreview(null)} variant="secondary" style={{ padding: '7px 14px', fontSize: 13 }}>
                   ← Neu generieren
                 </Btn>
               </div>
+              <p style={{ fontSize: 12, color: T.textDim, marginBottom: 20 }}>
+                Ziehen zum Sortieren · Bearbeiten · ✕ zum Löschen{destList.length > 1 ? ' · Ziel-Ordner per Dropdown wählen' : ''}
+              </p>
 
               {preview.map((card, i) => (
                 <div
                   key={i}
+                  draggable
+                  onDragStart={e => onCardDragStart(e, i)}
+                  onDragOver={e => onCardDragOver(e, i)}
+                  onDragEnd={onCardDragEnd}
                   style={{
-                    background: T.s2, border: `1px solid ${T.border}`,
-                    borderRadius: T.r2, padding: 16, marginBottom: 10,
+                    background: dragIdx === i ? T.s3 : T.s2,
+                    border: `1px solid ${dragIdx === i ? T.acc : T.border}`,
+                    borderRadius: T.r2, padding: 14, marginBottom: 8,
+                    opacity: dragIdx === i ? 0.65 : 1,
+                    transition: 'background 0.1s, border-color 0.1s, opacity 0.1s',
                   }}
                 >
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'start' }}>
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, marginBottom: 7 }}>VORDERSEITE</div>
-                      <textarea value={card.front || ''} onChange={e => upd(i, 'front', e.target.value)} rows={2} placeholder="Vorderseite" />
+                  <div style={{ display: 'grid', gridTemplateColumns: '20px 1fr 1fr auto', gap: 12, alignItems: 'start' }}>
+
+                    {/* Drag handle */}
+                    <div style={{ paddingTop: 24, color: T.textDim, fontSize: 16, cursor: 'grab', userSelect: 'none', textAlign: 'center' }}>
+                      ⠿
                     </div>
+
+                    {/* Front */}
                     <div>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, marginBottom: 7 }}>RÜCKSEITE</div>
-                      <textarea value={card.back || ''} onChange={e => upd(i, 'back', e.target.value)} rows={2} placeholder="Langbezeichnung" style={{ marginBottom: 8 }} />
-                      <input value={card.backShort || ''} onChange={e => upd(i, 'backShort', e.target.value)} placeholder="Kurzbezeichnung (optional)" />
+                      <FLabel>VORDERSEITE</FLabel>
+                      <textarea
+                        value={card.front || ''}
+                        onChange={e => upd(i, 'front', e.target.value)}
+                        rows={2} placeholder="Vorderseite"
+                        style={{ cursor: 'text' }}
+                      />
                     </div>
+
+                    {/* Back + optional dest dropdown */}
+                    <div>
+                      <FLabel>RÜCKSEITE</FLabel>
+                      <textarea
+                        value={card.back || ''}
+                        onChange={e => upd(i, 'back', e.target.value)}
+                        rows={2} placeholder="Langbezeichnung"
+                        style={{ marginBottom: 8, cursor: 'text' }}
+                      />
+                      <input
+                        value={card.backShort || ''}
+                        onChange={e => upd(i, 'backShort', e.target.value)}
+                        placeholder="Kurzbezeichnung (optional)"
+                      />
+                      {destList.length > 1 && (
+                        <select
+                          value={card._dest}
+                          onChange={e => upd(i, '_dest', e.target.value)}
+                          style={{
+                            marginTop: 8, width: '100%',
+                            background: T.s3, border: `1px solid ${T.border}`,
+                            color: T.textSub, borderRadius: T.r,
+                            padding: '6px 10px', fontSize: 12, outline: 'none',
+                          }}
+                        >
+                          {destList.map(d => (
+                            <option key={d.path} value={d.path}>{d.label}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    {/* Delete */}
                     <button
                       onClick={() => setPreview(p => p.filter((_, idx) => idx !== i))}
-                      style={{ background: 'none', border: 'none', color: T.textDim, cursor: 'pointer', fontSize: 16, paddingTop: 26, transition: 'color 0.12s' }}
+                      style={{ background: 'none', border: 'none', color: T.textDim, cursor: 'pointer', fontSize: 16, paddingTop: 22, transition: 'color 0.12s' }}
                       onMouseEnter={e => e.currentTarget.style.color = T.red}
                       onMouseLeave={e => e.currentTarget.style.color = T.textDim}
                     >✕</button>
@@ -906,7 +1033,11 @@ const KIImportScreen = ({ cardsPath, onSaved, onClose }) => {
                 </div>
               ))}
 
-              <Btn onClick={saveAll} disabled={saving || preview.length === 0} full style={{ padding: '14px', fontSize: 15, marginTop: 8 }}>
+              <Btn
+                onClick={saveAll}
+                disabled={saving || preview.length === 0}
+                full style={{ padding: '14px', fontSize: 15, marginTop: 10 }}
+              >
                 {saving ? 'Speichert…' : `${preview.length} Karten speichern`}
               </Btn>
             </div>
@@ -1633,7 +1764,17 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
       {modal     && <CreateModal title={t.newGroup.replace('+ ','')} placeholder="z.B. Hauptsignale" onSave={create} onClose={() => setModal(false)} />}
       {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
-      {kiImport  && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
+      {kiImport  && (
+        <KIImportScreen
+          cardsPath={cardsPath}
+          destinations={[
+            { label: `📍 ${cat.name} (diese Ebene)`, path: cardsPath },
+            ...items.map(it => ({ label: `📁 ${it.name}`, path: `${path}/${it.id}/cards` })),
+          ]}
+          onSaved={() => { setKiImport(false); load() }}
+          onClose={() => setKiImport(false)}
+        />
+      )}
     </div>
   )
 }
@@ -1730,7 +1871,17 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
       {modal     && <CreateModal title={t.newSubgroup.replace('+ ','')} placeholder="z.B. Hp-Begriffe" onSave={create} onClose={() => setModal(false)} />}
       {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
-      {kiImport  && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
+      {kiImport  && (
+        <KIImportScreen
+          cardsPath={cardsPath}
+          destinations={[
+            { label: `📍 ${sub.name} (diese Ebene)`, path: cardsPath },
+            ...items.map(it => ({ label: `📁 ${it.name}`, path: `${path}/${it.id}/cards` })),
+          ]}
+          onSaved={() => { setKiImport(false); load() }}
+          onClose={() => setKiImport(false)}
+        />
+      )}
     </div>
   )
 }
