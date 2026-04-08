@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react'
 import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
 import {
-  collection, addDoc, getDocs, deleteDoc, doc,
+  collection, addDoc, getDocs, deleteDoc, doc, limit,
   serverTimestamp, query, orderBy, updateDoc, setDoc, getDoc,
 } from 'firebase/firestore'
 import { auth, db, provider } from './firebase'
@@ -48,6 +48,9 @@ const LANG = {
     defaultMode: 'Standard-Lernmodus', accountInfo: 'Konto',
     saved: 'Gespeichert', saving: 'Speichert…', cardsUnit: 'Karten',
     classic: 'Klassisch', kiSelect: 'KI-Auswahl',
+    searchPlaceholder: 'Kategorien suchen…',
+    emptyCards: 'Noch keine Karten', emptyCardsSub: 'KI-Import oder manuell hinzufügen.',
+    lastStudied: 'Gelernt',
   },
   en: {
     back: 'Back', home: 'My Categories', newCategory: '+ New Category',
@@ -62,6 +65,9 @@ const LANG = {
     defaultMode: 'Default Learning Mode', accountInfo: 'Account',
     saved: 'Saved', saving: 'Saving…', cardsUnit: 'cards',
     classic: 'Classic', kiSelect: 'AI Selection',
+    searchPlaceholder: 'Search categories…',
+    emptyCards: 'No cards yet', emptyCardsSub: 'Import with AI or add manually.',
+    lastStudied: 'Studied',
   },
 }
 const LangContext = createContext(LANG.de)
@@ -89,6 +95,45 @@ const countDocs = async (path) => {
   try { const snap = await getDocs(collection(db, path)); return snap.size }
   catch { return 0 }
 }
+const getLastReviewed = async (path) => {
+  try {
+    const snap = await getDocs(query(collection(db, path), orderBy('lastReviewed', 'desc'), limit(1)))
+    if (snap.empty) return null
+    return snap.docs[0].data().lastReviewed ?? null
+  } catch { return null }
+}
+
+const enrichCategoryData = async (uid, catId) => {
+  const catPath = `users/${uid}/categories/${catId}`
+  try {
+    const subcatSnap = await getDocs(collection(db, `${catPath}/subcategories`))
+    const subcatIds = subcatSnap.docs.map(d => d.id)
+    const [directCards, ...subcatCounts] = await Promise.all([
+      countDocs(`${catPath}/cards`),
+      ...subcatIds.map(sid => countDocs(`${catPath}/subcategories/${sid}/cards`)),
+    ])
+    const cardCount = directCards + subcatCounts.reduce((a, b) => a + b, 0)
+    const [directLast, ...subcatLasts] = await Promise.all([
+      getLastReviewed(`${catPath}/cards`),
+      ...subcatIds.map(sid => getLastReviewed(`${catPath}/subcategories/${sid}/cards`)),
+    ])
+    const allLasts = [directLast, ...subcatLasts].filter(Boolean)
+    const lastStudied = allLasts.length > 0
+      ? allLasts.reduce((a, b) => ((a?.seconds || 0) > (b?.seconds || 0) ? a : b))
+      : null
+    return { groupCount: subcatIds.length, cardCount, lastStudied }
+  } catch { return { groupCount: 0, cardCount: 0, lastStudied: null } }
+}
+
+// ─── CATEGORY COLORS ─────────────────────────────────────────────────────────
+const CAT_COLORS = [
+  { id: 'blue',   hex: '#4F8EF7' },
+  { id: 'purple', hex: '#A78BFA' },
+  { id: 'green',  hex: '#34D399' },
+  { id: 'amber',  hex: '#FBBF24' },
+  { id: 'rose',   hex: '#F87171' },
+]
+const catColor = id => CAT_COLORS.find(c => c.id === id)?.hex ?? CAT_COLORS[0].hex
 
 // ─── PRIMITIVES ───────────────────────────────────────────────────────────────
 const Btn = ({ children, onClick, variant = 'primary', disabled = false, style = {}, full = false }) => {
@@ -363,10 +408,11 @@ const CtxMenu = ({ items }) => {
 }
 
 // ─── CREATE / RENAME MODALS ───────────────────────────────────────────────────
-const CreateModal = ({ title, placeholder, onSave, onClose }) => {
-  const [name, setName] = useState('')
+const CreateModal = ({ title, placeholder, onSave, onClose, withColor = false }) => {
+  const [name,  setName]  = useState('')
+  const [color, setColor] = useState('blue')
   const t = useT()
-  const submit = async () => { if (name.trim()) { await onSave(name.trim()); onClose() } }
+  const submit = async () => { if (name.trim()) { await onSave(name.trim(), color); onClose() } }
   return (
     <Modal onClose={onClose}>
       <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 20 }}>{title}</h3>
@@ -376,8 +422,30 @@ const CreateModal = ({ title, placeholder, onSave, onClose }) => {
         onChange={e => setName(e.target.value)}
         placeholder={placeholder}
         onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onClose() }}
-        style={{ marginBottom: 20 }}
+        style={{ marginBottom: withColor ? 18 : 20 }}
       />
+      {withColor && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>Farbe</div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            {CAT_COLORS.map(c => (
+              <button
+                key={c.id}
+                onClick={() => setColor(c.id)}
+                style={{
+                  width: 30, height: 30, borderRadius: '50%',
+                  background: c.hex, cursor: 'pointer',
+                  border: color === c.id ? `3px solid ${T.text}` : '3px solid transparent',
+                  outline: color === c.id ? `2px solid ${c.hex}` : 'none',
+                  outlineOffset: 2,
+                  transition: 'all 0.12s',
+                  boxShadow: color === c.id ? `0 0 8px ${c.hex}66` : 'none',
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 10 }}>
         <Btn onClick={submit} disabled={!name.trim()} full>{t.create}</Btn>
         <Btn onClick={onClose} variant="secondary" style={{ flexShrink: 0, padding: '9px 16px' }}>{t.cancel}</Btn>
@@ -433,7 +501,10 @@ const SectionLabel = ({ children }) => (
 const FolderCard = ({ item, onClick, onRename, onDelete }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
-  const count = item._count ?? 0
+  const groupCount = item._count ?? 0
+  const cardCount  = item._cardCount ?? 0
+  const color = catColor(item.color || 'blue')
+  const colorDim = `${color}1A`
 
   return (
     <div
@@ -442,7 +513,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete }) => {
       onClick={onClick}
       style={{
         background: hov ? T.s3 : T.s2,
-        border: `1px solid ${hov ? T.borderHov : T.border}`,
+        border: `1px solid ${hov ? color + '55' : T.border}`,
         borderRadius: T.r2,
         padding: '20px 18px',
         cursor: 'pointer',
@@ -450,32 +521,46 @@ const FolderCard = ({ item, onClick, onRename, onDelete }) => {
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
-        boxShadow: hov ? '0 8px 24px rgba(0,0,0,0.3)' : 'none',
+        boxShadow: hov ? `0 8px 24px rgba(0,0,0,0.3), 0 0 0 1px ${color}22` : 'none',
+        borderTop: `3px solid ${color}`,
       }}
     >
       {/* Icon */}
       <div style={{
         width: 38, height: 38, borderRadius: 9,
-        background: T.accDim,
+        background: colorDim,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0,
       }}>
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <path d="M1.5 4.5C1.5 3.672 2.172 3 3 3H7L8.5 4.5H15C15.828 4.5 16.5 5.172 16.5 6V13.5C16.5 14.328 15.828 15 15 15H3C2.172 15 1.5 14.328 1.5 13.5V4.5Z" stroke={T.acc} strokeWidth="1.4" strokeLinejoin="round"/>
+          <path d="M1.5 4.5C1.5 3.672 2.172 3 3 3H7L8.5 4.5H15C15.828 4.5 16.5 5.172 16.5 6V13.5C16.5 14.328 15.828 15 15 15H3C2.172 15 1.5 14.328 1.5 13.5V4.5Z" stroke={color} strokeWidth="1.4" strokeLinejoin="round"/>
         </svg>
       </div>
 
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: T.text, lineHeight: 1.3, marginBottom: 4 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: T.text, lineHeight: 1.3, marginBottom: 6 }}>
           {item.name}
         </div>
-        <div style={{ fontSize: 12, color: T.textDim }}>
-          {count} {count === 1 ? 'Gruppe' : 'Gruppen'}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, color: T.textDim }}>
+            {groupCount} {groupCount === 1 ? 'Gruppe' : 'Gruppen'}
+          </span>
+          {cardCount > 0 && (
+            <span style={{ fontSize: 12, color, fontWeight: 600 }}>
+              · {cardCount} {t.cardsUnit}
+            </span>
+          )}
         </div>
       </div>
 
-      {item.updatedAt && (
-        <div style={{ fontSize: 11, color: T.textDim }}>{fmtDate(item.updatedAt)}</div>
+      {/* Last studied */}
+      {(item._lastStudied || item.updatedAt) && (
+        <div style={{ fontSize: 11, color: T.textDim }}>
+          {item._lastStudied
+            ? `${t.lastStudied}: ${fmtDate(item._lastStudied)}`
+            : fmtDate(item.updatedAt)
+          }
+        </div>
       )}
 
       {/* Context menu */}
@@ -1402,7 +1487,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
 }
 
 // ─── EMPTY STATE ──────────────────────────────────────────────────────────────
-const Empty = ({ icon, title, sub }) => (
+const Empty = ({ icon, title, sub, children }) => (
   <div style={{
     background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r2,
     padding: '56px 40px', textAlign: 'center', marginTop: 8,
@@ -1410,6 +1495,7 @@ const Empty = ({ icon, title, sub }) => (
     <div style={{ fontSize: 40, marginBottom: 14 }}>{icon}</div>
     <div style={{ fontSize: 16, fontWeight: 600, color: T.text, marginBottom: 8 }}>{title}</div>
     {sub && <div style={{ fontSize: 13, color: T.textSub, lineHeight: 1.7, whiteSpace: 'pre-line' }}>{sub}</div>}
+    {children && <div style={{ marginTop: 20, display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>{children}</div>}
   </div>
 )
 
@@ -1571,6 +1657,7 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
   const [loading,  setLoading]  = useState(true)
   const [modal,    setModal]    = useState(false)
   const [renaming, setRenaming] = useState(null)
+  const [search,   setSearch]   = useState('')
   const t    = useT()
   const uid  = user.uid
   const path = `users/${uid}/categories`
@@ -1579,19 +1666,20 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
     setLoading(true)
     const docs = await loadDocs(path)
     const enriched = await Promise.all(
-      docs.map(async d => ({ ...d, _count: await countDocs(`${path}/${d.id}/subcategories`) }))
+      docs.map(async d => {
+        const { groupCount, cardCount, lastStudied } = await enrichCategoryData(uid, d.id)
+        return { ...d, _count: groupCount, _cardCount: cardCount, _lastStudied: lastStudied }
+      })
     )
     setItems(enriched)
     setLoading(false)
-  }, [path])
+  }, [path, uid])
 
   useEffect(() => { load() }, [load])
 
-  const create = async name => {
-    console.log('[Katara] createCategory — writing to Firestore:', path, { name })
+  const create = async (name, color) => {
     try {
-      await addDoc(collection(db, path), { name, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
-      console.log('[Katara] createCategory — Firestore write successful, reloading list')
+      await addDoc(collection(db, path), { name, color: color || 'blue', createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
       load()
     } catch (err) {
       console.error('[Katara] createCategory — addDoc failed:', err)
@@ -1605,6 +1693,10 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
     await updateDoc(doc(db, `${path}/${id}`), { name, updatedAt: serverTimestamp() })
     setRenaming(null); load()
   }
+
+  const filtered = search.trim()
+    ? items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()))
+    : items
 
   return (
     <div className="app-bg" style={{ minHeight: '100vh' }}>
@@ -1632,7 +1724,7 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
 
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '36px 24px' }}>
         {/* Section header */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Exo 2', sans-serif", letterSpacing: 0.3 }}>
               {t.home}
@@ -1646,15 +1738,32 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
           </Btn>
         </div>
 
+        {/* Search */}
+        {!loading && items.length > 0 && (
+          <div style={{ position: 'relative', marginBottom: 20 }}>
+            <svg
+              width="15" height="15" viewBox="0 0 15 15" fill="none"
+              style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+            >
+              <circle cx="6.5" cy="6.5" r="4.5" stroke={T.textDim} strokeWidth="1.4"/>
+              <path d="M10 10L13 13" stroke={T.textDim} strokeWidth="1.4" strokeLinecap="round"/>
+            </svg>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={t.searchPlaceholder}
+              style={{ paddingLeft: 34, width: '100%', maxWidth: 340 }}
+            />
+          </div>
+        )}
+
         {!loading && items.length === 0 ? (
-          <Empty
-            icon="📚"
-            title={t.noCategories}
-            sub={t.noCategoriesHint}
-          />
+          <Empty icon="📚" title={t.noCategories} sub={t.noCategoriesHint} />
+        ) : !loading && filtered.length === 0 ? (
+          <Empty icon="🔍" title="Keine Treffer" sub={`Keine Kategorie enthält "${search}".`} />
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
-            {items.map(item => (
+            {filtered.map(item => (
               <FolderCard
                 key={item.id} item={item}
                 onClick={() => onOpen(item)}
@@ -1666,7 +1775,7 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
         )}
       </div>
 
-      {modal    && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} />}
+      {modal    && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
       {renaming && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
     </div>
   )
@@ -1733,10 +1842,12 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen }) => {
         }
       />
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 24px' }}>
-        {items.length === 0 && cards.length === 0
-          ? <Empty icon="🗂️" title="Noch leer" sub="Erstelle Gruppen oder füge Karten direkt hier hinzu." />
-          : null
-        }
+        {items.length === 0 && cards.length === 0 && (
+          <Empty icon="🗂️" title={t.emptyCards} sub={t.emptyCardsSub}>
+            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '8px 14px', fontSize: 13 }}>{t.kiCreate}</Btn>
+            <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
+          </Empty>
+        )}
         {items.length > 0 && (
           <>
             <SectionLabel>{t.groups}</SectionLabel>
@@ -1840,10 +1951,12 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen }) => {
         }
       />
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 24px' }}>
-        {items.length === 0 && cards.length === 0
-          ? <Empty icon="📂" title="Noch leer" sub="Erstelle Untergruppen oder füge Karten direkt hier hinzu." />
-          : null
-        }
+        {items.length === 0 && cards.length === 0 && (
+          <Empty icon="📂" title={t.emptyCards} sub={t.emptyCardsSub}>
+            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '8px 14px', fontSize: 13 }}>{t.kiCreate}</Btn>
+            <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
+          </Empty>
+        )}
         {items.length > 0 && (
           <>
             <SectionLabel>{t.subgroups}</SectionLabel>
@@ -1956,12 +2069,14 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack }) => {
         )}
 
         {/* Card list */}
-        {cards.length === 0
-          ? <Empty icon="🃏" title="Noch keine Karten" sub="Erstelle Karten manuell oder generiere sie mit der KI." />
-          : cards.map(c => (
-            <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => remove(c.id)} />
-          ))
-        }
+        {cards.length === 0 ? (
+          <Empty icon="🃏" title={t.emptyCards} sub={t.emptyCardsSub}>
+            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '8px 14px', fontSize: 13 }}>{t.kiGenerate}</Btn>
+            <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
+          </Empty>
+        ) : cards.map(c => (
+          <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => remove(c.id)} />
+        ))}
       </div>
 
       {cardModal  && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
