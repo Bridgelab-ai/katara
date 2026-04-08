@@ -225,6 +225,42 @@ const Badge = ({ children, color = T.acc }) => (
   </span>
 )
 
+// ─── TTS BUTTON ───────────────────────────────────────────────────────────────
+const TtsBtn = ({ text, lang = 'de-DE', label }) => {
+  const [active, setActive] = useState(false)
+  const play = e => {
+    e.stopPropagation()
+    if (!window.speechSynthesis) return
+    window.speechSynthesis.cancel()
+    const u = new SpeechSynthesisUtterance(text)
+    u.lang = lang
+    u.onend = () => setActive(false)
+    u.onerror = () => setActive(false)
+    setActive(true)
+    window.speechSynthesis.speak(u)
+  }
+  return (
+    <button
+      onClick={play}
+      title={`Vorlesen (${lang})`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        background: active ? T.accDim : 'none',
+        border: `1px solid ${active ? T.acc : T.border}`,
+        color: active ? T.acc : T.textSub,
+        borderRadius: T.r, padding: '3px 9px', fontSize: 12,
+        cursor: 'pointer', transition: 'all 0.12s', flexShrink: 0,
+      }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = T.acc; e.currentTarget.style.color = T.acc }}
+      onMouseLeave={e => {
+        if (!active) { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textSub }
+      }}
+    >
+      🔊{label ? ` ${label}` : ''}
+    </button>
+  )
+}
+
 // ─── MODAL ────────────────────────────────────────────────────────────────────
 const Modal = ({ children, onClose, width = 480 }) => (
   <div
@@ -681,8 +717,19 @@ const CardItem = ({ card, onEdit, onDelete }) => {
             {card.backImage && (
               <img src={card.backImage} alt="" style={{ maxHeight: 56, borderRadius: 6, marginBottom: 6, border: `1px solid ${T.border}` }} />
             )}
-            <div style={{ fontSize: 14, color: T.text, fontWeight: 600 }}>{card.back}</div>
-            {card.backShort && <div style={{ fontSize: 12, color: T.acc, marginTop: 3 }}>{card.backShort}</div>}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 14, color: T.text, fontWeight: 600 }}>{card.back}</div>
+                {card.backShort && <div style={{ fontSize: 12, color: T.acc, marginTop: 3 }}>{card.backShort}</div>}
+                {(card.pronunciation_de || card.pronunciation_en) && (
+                  <div style={{ marginTop: 7, fontSize: 12, color: T.textSub, lineHeight: 1.7 }}>
+                    {card.pronunciation_de && <div>🇩🇪 {card.pronunciation_de}</div>}
+                    {card.pronunciation_en && <div>🇬🇧 {card.pronunciation_en}</div>}
+                  </div>
+                )}
+              </div>
+              <TtsBtn text={card.back} lang="de-DE" />
+            </div>
           </div>
         )}
       </div>
@@ -736,12 +783,14 @@ const ImgPreview = ({ src, onRemove }) => (
 
 // ─── CARD MODAL ───────────────────────────────────────────────────────────────
 const CardModal = ({ initial, onSave, onClose }) => {
-  const [front,     setFront]     = useState(initial?.front     || '')
-  const [image,     setImage]     = useState(initial?.image     || null)
-  const [back,      setBack]      = useState(initial?.back      || '')
-  const [backShort, setBackShort] = useState(initial?.backShort || '')
-  const [backImage, setBackImage] = useState(initial?.backImage || null)
-  const [saving,    setSaving]    = useState(false)
+  const [front,           setFront]           = useState(initial?.front           || '')
+  const [image,           setImage]           = useState(initial?.image           || null)
+  const [back,            setBack]            = useState(initial?.back            || '')
+  const [backShort,       setBackShort]       = useState(initial?.backShort       || '')
+  const [backImage,       setBackImage]       = useState(initial?.backImage       || null)
+  const [pronunciationDe, setPronunciationDe] = useState(initial?.pronunciation_de || '')
+  const [pronunciationEn, setPronunciationEn] = useState(initial?.pronunciation_en || '')
+  const [saving,          setSaving]          = useState(false)
 
   const pickImg = setter => e => {
     const f = e.target.files[0]; if (!f) return
@@ -751,7 +800,11 @@ const CardModal = ({ initial, onSave, onClose }) => {
   const save = async () => {
     if (!back.trim() && !front.trim() && !image) return
     setSaving(true)
-    await onSave({ front: front.trim(), image: image || null, back: back.trim(), backShort: backShort.trim(), backImage: backImage || null })
+    await onSave({
+      front: front.trim(), image: image || null,
+      back: back.trim(), backShort: backShort.trim(), backImage: backImage || null,
+      pronunciation_de: pronunciationDe.trim(), pronunciation_en: pronunciationEn.trim(),
+    })
     setSaving(false)
   }
 
@@ -789,7 +842,11 @@ const CardModal = ({ initial, onSave, onClose }) => {
           <FieldLabel>Langbezeichnung *</FieldLabel>
           <textarea value={back} onChange={e => setBack(e.target.value)} placeholder="z.B. Hauptsignal Hp 0 — Halt" rows={3} style={{ marginBottom: 10 }} />
           <FieldLabel>Kurzbezeichnung</FieldLabel>
-          <input value={backShort} onChange={e => setBackShort(e.target.value)} placeholder="z.B. Hp 0" style={{ marginBottom: 14 }} />
+          <input value={backShort} onChange={e => setBackShort(e.target.value)} placeholder="z.B. Hp 0" style={{ marginBottom: 10 }} />
+          <FieldLabel>🇩🇪 Aussprache (optional)</FieldLabel>
+          <input value={pronunciationDe} onChange={e => setPronunciationDe(e.target.value)} placeholder="z.B. haupt-zig-nahl" style={{ marginBottom: 6 }} />
+          <FieldLabel>🇬🇧 Pronunciation (optional)</FieldLabel>
+          <input value={pronunciationEn} onChange={e => setPronunciationEn(e.target.value)} placeholder="e.g. howpt-zig-nahl" style={{ marginBottom: 14 }} />
           <FieldLabel>Bild (optional)</FieldLabel>
           <input type="file" accept="image/*" onChange={pickImg(setBackImage)} style={{ fontSize: 12, color: T.textSub }} />
           {backImage && <ImgPreview src={backImage} onRemove={() => setBackImage(null)} />}
@@ -858,9 +915,16 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose }) => {
 
       const sortPart = sortInstr.trim() ? `\nSorting instruction: ${sortInstr.trim()}` : ''
       const instrPart = instr.trim() ? `${instr.trim()}\n\n` : ''
+      const hasPronunciation = /aussprache|pronunciation/i.test(instr + ' ' + sortInstr)
+      const pronunciationPart = hasPronunciation
+        ? '\nAlso add fields: pronunciation_de (German phonetic guide, use easy-to-read syllable breaks, not IPA) and pronunciation_en (English phonetic guide) for each card.'
+        : ''
+      const jsonExample = hasPronunciation
+        ? '[{"front":"...","back":"...","backShort":"...","pronunciation_de":"...","pronunciation_en":"..."}]'
+        : '[{"front":"...","back":"...","backShort":"..."}]'
       content.push({
         type: 'text',
-        text: `${instrPart}Create flashcards from the above content.${sortPart}\n\nReturn ONLY a valid JSON array, no markdown, no explanation:\n[{"front":"...","back":"...","backShort":"..."}]`,
+        text: `${instrPart}Create flashcards from the above content.${sortPart}${pronunciationPart}\n\nReturn ONLY a valid JSON array, no markdown, no explanation:\n${jsonExample}`,
       })
 
       const res = await fetch('/api/chat', {
@@ -890,6 +954,7 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose }) => {
       await addDoc(collection(db, c._dest), {
         front: c.front || '', image: null,
         back: c.back || c.front || '', backShort: c.backShort || '',
+        pronunciation_de: c.pronunciation_de || '', pronunciation_en: c.pronunciation_en || '',
         backImage: null, correctCount: 0, wrongCount: 0,
         mastery: 0, lastReviewed: null, createdAt: serverTimestamp(),
       })
@@ -1089,6 +1154,20 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose }) => {
                         onChange={e => upd(i, 'backShort', e.target.value)}
                         placeholder="Kurzbezeichnung (optional)"
                       />
+                      {(card.pronunciation_de !== undefined || card.pronunciation_en !== undefined) && (
+                        <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          <input
+                            value={card.pronunciation_de || ''}
+                            onChange={e => upd(i, 'pronunciation_de', e.target.value)}
+                            placeholder="🇩🇪 Aussprache DE"
+                          />
+                          <input
+                            value={card.pronunciation_en || ''}
+                            onChange={e => upd(i, 'pronunciation_en', e.target.value)}
+                            placeholder="🇬🇧 Pronunciation EN"
+                          />
+                        </div>
+                      )}
                       {destList.length > 1 && (
                         <select
                           value={card._dest}
@@ -1468,7 +1547,32 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
                 {card.backImage && <img src={card.backImage} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 10, marginBottom: 20, objectFit: 'contain' }} />}
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.acc, letterSpacing: 1.6, marginBottom: 14 }}>ANTWORT</div>
                 <div style={{ fontSize: 24, fontWeight: 700, color: T.text, lineHeight: 1.4, marginBottom: 10 }}>{card.back}</div>
-                {card.backShort && <div style={{ fontSize: 16, color: T.acc, fontWeight: 600 }}>{card.backShort}</div>}
+                {card.backShort && <div style={{ fontSize: 16, color: T.acc, fontWeight: 600, marginBottom: 10 }}>{card.backShort}</div>}
+
+                {/* TTS */}
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+                  <TtsBtn text={card.back} lang="de-DE" label="🇩🇪 DE" />
+                  {card.pronunciation_en && <TtsBtn text={card.back} lang="en-US" label="🇬🇧 EN" />}
+                </div>
+
+                {/* Pronunciation guides */}
+                {(card.pronunciation_de || card.pronunciation_en) && (
+                  <div style={{
+                    marginTop: 16, padding: '12px 16px', textAlign: 'left',
+                    background: T.s1, borderRadius: T.r, border: `1px solid ${T.border}`,
+                  }}>
+                    {card.pronunciation_de && (
+                      <div style={{ fontSize: 13, color: T.textSub, marginBottom: card.pronunciation_en ? 6 : 0 }}>
+                        🇩🇪 Deutsche Aussprache: <span style={{ color: T.text, fontWeight: 500 }}>{card.pronunciation_de}</span>
+                      </div>
+                    )}
+                    {card.pronunciation_en && (
+                      <div style={{ fontSize: 13, color: T.textSub }}>
+                        🇬🇧 English pronunciation: <span style={{ color: T.text, fontWeight: 500 }}>{card.pronunciation_en}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>
