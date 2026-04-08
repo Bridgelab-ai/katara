@@ -226,18 +226,30 @@ const Badge = ({ children, color = T.acc }) => (
 )
 
 // ─── TTS BUTTON ───────────────────────────────────────────────────────────────
-const TtsBtn = ({ text, lang = 'de-DE', label }) => {
+const detectLang = text => {
+  if (!text) return 'de-DE'
+  if (/[äöüÄÖÜß]/.test(text)) return 'de-DE'
+  if (/\b(und|oder|der|die|das|ist|sind|hat|haben|wird|werden|ein|eine|kein)\b/i.test(text)) return 'de-DE'
+  if (/\b(the|is|are|have|has|will|can|this|that|and|or|not)\b/i.test(text)) return 'en-GB'
+  return 'de-DE'
+}
+
+const TtsBtn = ({ text, lang, label }) => {
   const [active, setActive] = useState(false)
+  const resolvedLang = lang || detectLang(text)
   const play = e => {
     e.stopPropagation()
-    if (!window.speechSynthesis) return
-    window.speechSynthesis.cancel()
+    const ss = window.speechSynthesis
+    if (!ss) return
+    ss.cancel()
     const u = new SpeechSynthesisUtterance(text)
-    u.lang = lang
+    u.lang = resolvedLang
+    u.rate = 0.92
     u.onend = () => setActive(false)
     u.onerror = () => setActive(false)
     setActive(true)
-    window.speechSynthesis.speak(u)
+    // Small delay required after cancel() in Chrome/Chromium
+    setTimeout(() => ss.speak(u), 120)
   }
   return (
     <button
@@ -346,38 +358,63 @@ const Header = ({ crumbs, onBack, right, title, onNavigate }) => {
   return (
   <div style={{
     position: 'sticky', top: 0, zIndex: 50,
-    background: `${T.bg}EE`,
-    backdropFilter: 'blur(12px)',
+    background: `${T.bg}F2`,
+    backdropFilter: 'blur(14px)',
     borderBottom: `1px solid ${T.border}`,
-    padding: '13px 24px',
-    display: 'flex', alignItems: 'center', gap: 12,
   }}>
-    {onBack && (
-      <button
-        onClick={onBack}
+    {/* Row 1: Bridgelab · Logo · spacer */}
+    <div style={{
+      display: 'flex', alignItems: 'center',
+      padding: '7px 24px',
+      borderBottom: `1px solid ${T.border}44`,
+    }}>
+      <a
+        href="https://vocara-peach.vercel.app"
         style={{
-          display: 'flex', alignItems: 'center', gap: 5,
-          background: 'none', border: 'none',
-          color: T.textSub, fontSize: 13, fontWeight: 500,
-          cursor: 'pointer', padding: '4px 0', flexShrink: 0,
-          transition: 'color 0.12s',
+          fontSize: 12, color: T.textDim, textDecoration: 'none',
+          fontWeight: 500, letterSpacing: 0.3, transition: 'color 0.12s',
+          flexShrink: 0,
         }}
-        onMouseEnter={e => e.currentTarget.style.color = T.acc}
-        onMouseLeave={e => e.currentTarget.style.color = T.textSub}
-      >
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-        {t.back}
-      </button>
-    )}
-    <div style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}>
-      {crumbs
-        ? <Breadcrumb crumbs={crumbs} onNavigate={onNavigate} />
-        : <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{title}</span>
-      }
+        onMouseEnter={e => e.currentTarget.style.color = T.textSub}
+        onMouseLeave={e => e.currentTarget.style.color = T.textDim}
+      >← Bridgelab</a>
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+        <Logo size={19} />
+      </div>
+      <div style={{ width: 72, flexShrink: 0 }} />
     </div>
-    {right}
+    {/* Row 2: Back · Breadcrumb/Title · Actions */}
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: '9px 24px',
+    }}>
+      {onBack && (
+        <button
+          onClick={onBack}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            background: 'none', border: 'none',
+            color: T.textSub, fontSize: 13, fontWeight: 500,
+            cursor: 'pointer', padding: '3px 0', flexShrink: 0,
+            transition: 'color 0.12s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.color = T.acc}
+          onMouseLeave={e => e.currentTarget.style.color = T.textSub}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M9 2L4 7L9 12" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          {t.back}
+        </button>
+      )}
+      <div style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}>
+        {crumbs
+          ? <Breadcrumb crumbs={crumbs} onNavigate={onNavigate} />
+          : <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{title}</span>
+        }
+      </div>
+      {right && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>{right}</div>}
+    </div>
   </div>
   )
 }
@@ -614,7 +651,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete }) => {
 }
 
 // ─── FOLDER ROW (list — Levels 2 & 3) ────────────────────────────────────────
-const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor }) => {
+const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor, onLearn }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
   const color = accentColor || T.acc
@@ -628,21 +665,21 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor 
         background: hov ? T.s3 : T.s2,
         border: `1px solid ${hov ? T.borderHov : T.border}`,
         borderRadius: T.r2,
-        padding: '14px 16px',
+        padding: '12px 14px',
         cursor: 'pointer',
         transition: 'all 0.15s',
-        display: 'flex', alignItems: 'center', gap: 14,
+        display: 'flex', alignItems: 'center', gap: 12,
         marginBottom: 8,
         borderLeft: `3px solid ${color}55`,
       }}
     >
       <div style={{
-        width: 32, height: 32, borderRadius: 8,
+        width: 30, height: 30, borderRadius: 7,
         background: `${color}18`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0,
       }}>
-        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+        <svg width="14" height="14" viewBox="0 0 15 15" fill="none">
           <path d="M1.5 3.5C1.5 2.672 2.172 2 3 2H5.5L7 3.5H12C12.828 3.5 13.5 4.172 13.5 5V11.5C13.5 12.328 12.828 13 12 13H3C2.172 13 1.5 12.328 1.5 11.5V3.5Z" stroke={color} strokeWidth="1.3" strokeLinejoin="round"/>
         </svg>
       </div>
@@ -654,9 +691,22 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor 
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        {item.updatedAt && (
-          <span style={{ fontSize: 11, color: T.textDim }}>{fmtDate(item.updatedAt)}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        {/* Learn button */}
+        {onLearn && (
+          <button
+            onClick={e => { e.stopPropagation(); onLearn() }}
+            title={t.learn}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 30, height: 30, borderRadius: 7,
+              background: hov ? T.green : `${T.green}22`,
+              border: `1px solid ${hov ? T.green : `${T.green}44`}`,
+              color: hov ? '#0A2A1E' : T.green,
+              cursor: 'pointer', fontSize: 12, fontWeight: 700,
+              transition: 'all 0.15s', flexShrink: 0,
+            }}
+          >▶</button>
         )}
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ opacity: hov ? 0.6 : 0.2, transition: 'opacity 0.15s' }}>
           <path d="M5 2.5L9.5 7L5 11.5" stroke={T.textSub} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -1533,8 +1583,10 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
 
                 {/* TTS */}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-                  <TtsBtn text={card.back} lang="de-DE" label="🇩🇪 DE" />
-                  {card.pronunciation_en && <TtsBtn text={card.back} lang="en-US" label="🇬🇧 EN" />}
+                  <TtsBtn text={card.pronunciation_de || card.back} lang="de-DE" label="🇩🇪 DE" />
+                  {(card.pronunciation_en || card.back) && (
+                    <TtsBtn text={card.pronunciation_en || card.back} lang="en-GB" label="🇬🇧 EN" />
+                  )}
                 </div>
 
                 {/* Pronunciation guides */}
@@ -1786,44 +1838,48 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
 
   return (
     <div className="app-bg" style={{ minHeight: '100vh' }}>
-      {/* Top bar */}
+      {/* Top bar — two rows */}
       <div style={{
-        background: `${T.bg}EE`, backdropFilter: 'blur(12px)',
+        background: `${T.bg}F2`, backdropFilter: 'blur(14px)',
         borderBottom: `1px solid ${T.border}`,
-        padding: '14px 28px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         position: 'sticky', top: 0, zIndex: 50,
       }}>
-        <Logo size={24} />
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <span style={{ fontSize: 13, color: T.textDim }}>
-            {user.displayName?.split(' ')[0]}
-          </span>
-          <Btn onClick={onSettings} variant="secondary" style={{ padding: '6px 12px', fontSize: 13 }}>
-            ⚙
-          </Btn>
-          <Btn onClick={() => signOut(auth)} variant="secondary" style={{ padding: '6px 14px', fontSize: 13 }}>
-            {t.signOut}
+        {/* Row 1: Bridgelab · Logo · user */}
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          padding: '7px 28px',
+          borderBottom: `1px solid ${T.border}44`,
+        }}>
+          <a
+            href="https://vocara-peach.vercel.app"
+            style={{ fontSize: 12, color: T.textDim, textDecoration: 'none', fontWeight: 500, letterSpacing: 0.3, transition: 'color 0.12s', flexShrink: 0 }}
+            onMouseEnter={e => e.currentTarget.style.color = T.textSub}
+            onMouseLeave={e => e.currentTarget.style.color = T.textDim}
+          >← Bridgelab</a>
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+            <Logo size={21} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            <span style={{ fontSize: 12, color: T.textDim }}>
+              {user.displayName?.split(' ')[0]}
+            </span>
+            <Btn onClick={onSettings} variant="secondary" style={{ padding: '5px 10px', fontSize: 13 }}>⚙</Btn>
+            <Btn onClick={() => signOut(auth)} variant="secondary" style={{ padding: '5px 12px', fontSize: 12 }}>{t.signOut}</Btn>
+          </div>
+        </div>
+        {/* Row 2: Title + New Category */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '9px 28px',
+        }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{t.home}</span>
+          <Btn onClick={() => setModal(true)} style={{ padding: '7px 16px', fontSize: 13 }}>
+            {t.newCategory}
           </Btn>
         </div>
       </div>
 
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '36px 24px' }}>
-        {/* Section header */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20 }}>
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Exo 2', sans-serif", letterSpacing: 0.3 }}>
-              {t.home}
-            </h1>
-            <p style={{ fontSize: 13, color: T.textSub, marginTop: 4 }}>
-              {loading ? 'Lädt…' : items.length === 0 ? t.noCategories : `${items.length} Kategorie${items.length !== 1 ? 'n' : ''}`}
-            </p>
-          </div>
-          <Btn onClick={() => setModal(true)} style={{ padding: '10px 20px' }}>
-            {t.newCategory}
-          </Btn>
-        </div>
-
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
         {/* Search */}
         {!loading && items.length > 0 && (
           <div style={{ position: 'relative', marginBottom: 20 }}>
@@ -1876,6 +1932,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
   const [cardModal, setCardModal] = useState(null)
   const [kiImport,  setKiImport]  = useState(false)
   const [learning,  setLearning]  = useState(false)
+  const [rowLearn,  setRowLearn]  = useState(null) // { cards, cardsPath }
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories`
@@ -1947,6 +2004,12 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
                 onClick={() => onOpen(item)}
                 onRename={() => setRenaming(item)}
                 onDelete={() => remove(item.id)}
+                onLearn={async () => {
+                  const p = `${path}/${item.id}/cards`
+                  const cs = await loadDocs(p)
+                  if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p })
+                  else onOpen(item)
+                }}
               />
             ))}
           </>
@@ -1971,6 +2034,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
       {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {learning  && <LearnMode cards={cards} cardsPath={cardsPath} onClose={() => { setLearning(false); load() }} />}
+      {rowLearn  && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} onClose={() => { setRowLearn(null); load() }} />}
       {kiImport  && (
         <KIImportScreen
           cardsPath={cardsPath}
@@ -1988,13 +2052,14 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
 
 // ─── SUBSUBCATEGORY SCREEN (Level 3) ─────────────────────────────────────────
 const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) => {
-  const [items,     setItems]     = useState([])
-  const [modal,     setModal]     = useState(false)
-  const [renaming,  setRenaming]  = useState(null)
-  const [cards,     setCards]     = useState([])
-  const [cardModal, setCardModal] = useState(null)
-  const [kiImport,  setKiImport]  = useState(false)
-  const [learning,  setLearning]  = useState(false)
+  const [items,       setItems]       = useState([])
+  const [modal,       setModal]       = useState(false)
+  const [renaming,    setRenaming]    = useState(null)
+  const [cards,       setCards]       = useState([])
+  const [cardModal,   setCardModal]   = useState(null)
+  const [kiImport,    setKiImport]    = useState(false)
+  const [learning,    setLearning]    = useState(false)
+  const [rowLearn,    setRowLearn]    = useState(null) // { cards, cardsPath }
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories`
@@ -2066,6 +2131,11 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
                 onClick={() => onOpen(item)}
                 onRename={() => setRenaming(item)}
                 onDelete={() => remove(item.id)}
+                onLearn={item._count > 0 ? async () => {
+                  const p = `${path}/${item.id}/cards`
+                  const cs = await loadDocs(p)
+                  if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p })
+                } : undefined}
               />
             ))}
           </>
@@ -2090,6 +2160,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
       {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {learning  && <LearnMode cards={cards} cardsPath={cardsPath} onClose={() => { setLearning(false); load() }} />}
+      {rowLearn  && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} onClose={() => { setRowLearn(null); load() }} />}
       {kiImport  && (
         <KIImportScreen
           cardsPath={cardsPath}
@@ -2217,7 +2288,6 @@ export default function App() {
   if (user === undefined) {
     return (
       <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <BridgelabBtn />
         <div style={{ color: T.textDim, fontSize: 14 }}>Wird geladen…</div>
       </div>
     )
@@ -2225,7 +2295,6 @@ export default function App() {
 
   return (
     <LangContext.Provider value={lang}>
-      <BridgelabBtn />
       {!user && <LoginScreen />}
       {user && cur.screen === 'home'     && <HomeScreen user={user} onOpen={cat => push({ screen: 'sub', cat })} onSettings={() => push({ screen: 'settings' })} />}
       {user && cur.screen === 'sub'      && <SubcategoryScreen user={user} cat={cur.cat} onBack={pop} onNavigate={goTo} onOpen={sub => push({ screen: 'subsub', cat: cur.cat, sub })} />}
