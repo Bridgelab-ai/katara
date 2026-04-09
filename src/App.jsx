@@ -194,7 +194,7 @@ const updateGlobalStats = async (uid, cardsAnswered, durationMinutes) => {
         totalCards: cardsAnswered, weeklyMinutes: durationMinutes,
         monthlyMinutes: durationMinutes, yearlyMinutes: durationMinutes,
         totalMinutes: durationMinutes, lastActive: now, streakDays: newStreak,
-      })
+      }, { merge: true })
     }
   } catch (_) {}
 }
@@ -2597,7 +2597,7 @@ const LoginScreen = () => {
 }
 
 // ─── HOME SCREEN (Level 1: Hauptkategorien) ───────────────────────────────────
-const HomeScreen = ({ user, onOpen, onSettings, streak = 0 }) => {
+const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, weeklyMinutes = 0 }) => {
   const [items,       setItems]       = useState([])
   const [loading,     setLoading]     = useState(true)
   const [modal,       setModal]       = useState(false)
@@ -2745,6 +2745,26 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0 }) => {
       </div>
 
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
+        {/* Stats strip */}
+        {(streak > 0 || totalCards > 0 || weeklyMinutes > 0) && (
+          <div style={{ display: 'flex', gap: 20, marginBottom: 16, flexWrap: 'wrap' }}>
+            {streak > 0 && (
+              <span style={{ fontSize: 12, color: T.textDim }}>
+                🔥 <span style={{ color: T.textSub }}>{streak} {streak === 1 ? 'Tag' : 'Tage'}</span>
+              </span>
+            )}
+            {totalCards > 0 && (
+              <span style={{ fontSize: 12, color: T.textDim }}>
+                📚 <span style={{ color: T.textSub }}>{totalCards.toLocaleString('de-DE')} Karten gelernt</span>
+              </span>
+            )}
+            {weeklyMinutes > 0 && (
+              <span style={{ fontSize: 12, color: T.textDim }}>
+                ⏱ <span style={{ color: T.textSub }}>{weeklyMinutes} Min diese Woche</span>
+              </span>
+            )}
+          </div>
+        )}
         {/* Search */}
         {!loading && items.length > 0 && (
           <div style={{ position: 'relative', marginBottom: 20 }}>
@@ -3302,6 +3322,8 @@ export default function App() {
   const [nav,           setNav]           = useState([{ screen: 'home' }])
   const [settings,      setSettings]      = useState({ lang: 'de', dailyGoal: 10, defaultMode: 'klassisch' })
   const [streak,        setStreak]        = useState(0)
+  const [totalCards,    setTotalCards]    = useState(0)
+  const [weeklyMinutes, setWeeklyMinutes] = useState(0)
   const [dismissedTips, setDismissedTips] = useState(new Set())
   const [partnerInfo,   setPartnerInfo]   = useState(null) // { uid, name }
   const [incomingShares,setIncomingShares]= useState([])   // from sharedFromPartner
@@ -3397,22 +3419,25 @@ export default function App() {
     try { await deleteDoc(doc(db, `users/${user.uid}/sharedFromPartner/${item.id}`)) } catch (_) {}
   }
 
-  // Load streak + ensure globalStats exists; update streak if new day
+  // Load stats + ensure globalStats exists; merge so existing data is never lost
   useEffect(() => {
     if (!user) return
     const ref = doc(db, `users/${user.uid}/globalStats/main`)
     getDoc(ref).then(snap => {
       const now = Date.now()
       const today = new Date().toDateString()
+      // Always use merge — only fills in missing fields, never deletes existing data
       if (!snap.exists()) {
         setDoc(ref, {
           streakDays: 1, totalCards: 0,
           weeklyMinutes: 0, monthlyMinutes: 0, yearlyMinutes: 0, totalMinutes: 0,
           lastActive: now,
-        }).catch(() => {})
+        }, { merge: true }).catch(() => {})
         setStreak(1)
       } else {
         const data = snap.data()
+        setTotalCards(data.totalCards || 0)
+        setWeeklyMinutes(Math.round(data.weeklyMinutes || 0))
         const lastDay = new Date(data.lastActive || 0).toDateString()
         const streakDays = data.streakDays || 0
         if (lastDay === today) {
@@ -3421,7 +3446,8 @@ export default function App() {
           const yesterday = new Date(now - 86400000).toDateString()
           const newStreak = lastDay === yesterday ? streakDays + 1 : 1
           setStreak(newStreak)
-          updateDoc(ref, { lastActive: now, streakDays: newStreak }).catch(() => {})
+          // merge: true ensures we only update these two fields, never touch totalCards etc.
+          setDoc(ref, { lastActive: now, streakDays: newStreak }, { merge: true }).catch(() => {})
         }
       }
     }).catch(() => {})
@@ -3449,7 +3475,7 @@ export default function App() {
           {user && incomingShares.length > 0 && (
             <IncomingShareModal item={incomingShares[0]} onAccept={acceptShare} onDecline={declineShare} />
           )}
-          {user && cur.screen === 'home'     && <HomeScreen user={user} onOpen={cat => push({ screen: 'sub', cat })} onSettings={() => push({ screen: 'settings' })} streak={streak} />}
+          {user && cur.screen === 'home'     && <HomeScreen user={user} onOpen={cat => push({ screen: 'sub', cat })} onSettings={() => push({ screen: 'settings' })} streak={streak} totalCards={totalCards} weeklyMinutes={weeklyMinutes} />}
           {user && cur.screen === 'sub'      && <SubcategoryScreen user={user} cat={cur.cat} onBack={pop} onNavigate={goTo} onOpen={sub => push({ screen: 'subsub', cat: cur.cat, sub })} />}
           {user && cur.screen === 'subsub'   && <SubSubcategoryScreen user={user} cat={cur.cat} sub={cur.sub} onBack={pop} onNavigate={goTo} onOpen={subsub => push({ screen: 'cards', cat: cur.cat, sub: cur.sub, subsub })} />}
           {user && cur.screen === 'cards'    && <CardsScreen user={user} cat={cur.cat} sub={cur.sub} subsub={cur.subsub} onBack={pop} onNavigate={goTo} />}
