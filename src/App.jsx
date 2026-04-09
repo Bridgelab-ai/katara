@@ -1297,6 +1297,66 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose }) => {
   )
 }
 
+// ─── PHONETIC HINT (for short front text ≤3 chars) ───────────────────────────
+const PhoneticHint = ({ text }) => {
+  const [phonetic, setPhonetic] = useState(null)  // null=loading, ''=failed, str=ok
+  const [active,   setActive]   = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setPhonetic(null)
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001', max_tokens: 30,
+        messages: [{ role: 'user', content: `How is '${text}' pronounced in German? Return ONLY the phonetic sound as a single word or syllable, no explanation, no example sentence. Example: 'N' → 'En'` }],
+      }),
+    })
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setPhonetic(d.content?.[0]?.text?.trim() || '') })
+      .catch(() => { if (!cancelled) setPhonetic('') })
+    return () => { cancelled = true }
+  }, [text])
+
+  const speak = e => {
+    e.stopPropagation()
+    const ss = window.speechSynthesis
+    if (!ss) return
+    ss.cancel()
+    const u = new SpeechSynthesisUtterance(text)
+    u.lang = 'de-DE'; u.rate = 0.7
+    u.onend = () => setActive(false); u.onerror = () => setActive(false)
+    setActive(true)
+    setTimeout(() => ss.speak(u), 120)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginTop: 10 }}>
+      <button
+        onClick={speak}
+        title="Aussprechen"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          background: active ? T.accDim : 'none',
+          border: `1px solid ${active ? T.acc : T.border}`,
+          color: active ? T.acc : T.textSub,
+          borderRadius: T.r, padding: '3px 10px', fontSize: 12,
+          cursor: 'pointer', transition: 'all 0.12s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = T.acc; e.currentTarget.style.color = T.acc }}
+        onMouseLeave={e => { if (!active) { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textSub } }}
+      >🔊 DE</button>
+      {phonetic === null
+        ? <span style={{ fontSize: 11, color: T.textDim }}>…</span>
+        : phonetic
+          ? <span style={{ fontSize: 12, color: T.textDim, fontStyle: 'italic' }}>/{phonetic}/</span>
+          : null
+      }
+    </div>
+  )
+}
+
 // ─── FOLDER PICKER MODAL ─────────────────────────────────────────────────────
 const FolderPickerModal = ({ uid, currentPath, onPick, onClose }) => {
   const [cats,     setCats]     = useState([])
@@ -1722,7 +1782,10 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
               <>
                 {card.image && <img src={card.image} alt="" style={{ maxHeight: 150, maxWidth: '100%', borderRadius: 10, marginBottom: 22, objectFit: 'contain' }} />}
                 <div style={{ fontSize: 22, fontWeight: 600, color: T.text, lineHeight: 1.45 }}>{card.front || '(Bild)'}</div>
-                <div style={{ fontSize: 12, color: T.textDim, marginTop: 24, letterSpacing: 0.5 }}>Klicken zum Aufdecken</div>
+                {card.front && card.front.trim().length <= 3 && (
+                  <PhoneticHint key={card.id} text={card.front.trim()} />
+                )}
+                <div style={{ fontSize: 12, color: T.textDim, marginTop: card.front?.trim().length <= 3 ? 10 : 24, letterSpacing: 0.5 }}>Klicken zum Aufdecken</div>
               </>
             ) : (
               <>
