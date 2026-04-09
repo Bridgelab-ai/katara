@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, createContext, useContext } f
 import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   collection, addDoc, getDocs, deleteDoc, doc, limit,
-  serverTimestamp, query, orderBy, updateDoc, setDoc, getDoc,
+  serverTimestamp, query, orderBy, updateDoc, setDoc, getDoc, increment,
 } from 'firebase/firestore'
 import { auth, db, provider } from './firebase'
 import './App.css'
@@ -123,6 +123,41 @@ const enrichCategoryData = async (uid, catId) => {
       : null
     return { groupCount: subcatIds.length, cardCount, lastStudied }
   } catch { return { groupCount: 0, cardCount: 0, lastStudied: null } }
+}
+
+// ─── GLOBAL STATS ─────────────────────────────────────────────────────────────
+const updateGlobalStats = async (uid, cardsAnswered, durationMinutes) => {
+  if (!uid || cardsAnswered <= 0) return
+  const ref = doc(db, `users/${uid}/globalStats/main`)
+  const now = Date.now()
+  const today = new Date().toDateString()
+  try {
+    const snap = await getDoc(ref)
+    const data = snap.exists() ? snap.data() : {}
+    const lastActive = data.lastActive || 0
+    const lastDay = new Date(lastActive).toDateString()
+    const streakDays = data.streakDays || 0
+    const newStreak = lastDay === today
+      ? streakDays
+      : (new Date(now - 86400000).toDateString() === lastDay ? streakDays + 1 : 1)
+    if (snap.exists()) {
+      await updateDoc(ref, {
+        totalCards:     increment(cardsAnswered),
+        weeklyMinutes:  increment(durationMinutes),
+        monthlyMinutes: increment(durationMinutes),
+        yearlyMinutes:  increment(durationMinutes),
+        totalMinutes:   increment(durationMinutes),
+        lastActive: now,
+        streakDays: newStreak,
+      })
+    } else {
+      await setDoc(ref, {
+        totalCards: cardsAnswered, weeklyMinutes: durationMinutes,
+        monthlyMinutes: durationMinutes, yearlyMinutes: durationMinutes,
+        totalMinutes: durationMinutes, lastActive: now, streakDays: newStreak,
+      })
+    }
+  } catch (_) {}
 }
 
 // ─── CATEGORY COLORS ─────────────────────────────────────────────────────────
@@ -571,7 +606,7 @@ const SectionLabel = ({ children }) => (
 )
 
 // ─── FOLDER CARD (grid tile — Level 1) ───────────────────────────────────────
-const FolderCard = ({ item, onClick, onRename, onDelete }) => {
+const FolderCard = ({ item, onClick, onRename, onDelete, onShare }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
   const groupCount = item._count ?? 0
@@ -636,6 +671,14 @@ const FolderCard = ({ item, onClick, onRename, onDelete }) => {
         </div>
       )}
 
+      {/* SharedBy badge */}
+      {item.sharedBy && (
+        <div style={{ fontSize: 11, color: T.textSub, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span>🎁</span>
+          <span>Von {item.sharedBy.name}</span>
+        </div>
+      )}
+
       {/* Context menu */}
       <div
         style={{ position: 'absolute', top: 10, right: 10, opacity: hov ? 1 : 0, transition: 'opacity 0.15s' }}
@@ -643,6 +686,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete }) => {
       >
         <CtxMenu items={[
           { label: t.rename, action: onRename },
+          ...(onShare ? [{ label: '🎁 Mit Partner teilen', action: onShare }] : []),
           { label: t.delete, action: onDelete, danger: true },
         ]} />
       </div>
@@ -723,7 +767,7 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
 }
 
 // ─── CARD LIST ITEM ───────────────────────────────────────────────────────────
-const CardItem = ({ card, onEdit, onDelete }) => {
+const CardItem = ({ card, onEdit, onDelete, onMove }) => {
   const [hov, setHov] = useState(false)
   const m = card.mastery || 0
   const mColor = m >= 3 ? T.green : m >= 2 ? T.acc : m >= 1 ? T.red : T.textDim
@@ -773,6 +817,15 @@ const CardItem = ({ card, onEdit, onDelete }) => {
       {/* Mastery + actions — always visible */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         {m > 0 && <Badge color={mColor}>{['','✗','✓','★'][m] || m}</Badge>}
+        {onMove && (
+          <button
+            onClick={e => { e.stopPropagation(); onMove(card) }}
+            title="Verschieben"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textDim, fontSize: 13, padding: '4px 6px', borderRadius: 5, transition: 'color 0.12s' }}
+            onMouseEnter={e => e.currentTarget.style.color = T.amber}
+            onMouseLeave={e => e.currentTarget.style.color = T.textDim}
+          >↗</button>
+        )}
         <button
           onClick={e => { e.stopPropagation(); onEdit() }}
           title="Bearbeiten"
@@ -1244,8 +1297,101 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose }) => {
   )
 }
 
+// ─── FOLDER PICKER MODAL ─────────────────────────────────────────────────────
+const FolderPickerModal = ({ uid, currentPath, onPick, onClose }) => {
+  const [cats,     setCats]     = useState([])
+  const [subcats,  setSubcats]  = useState({}) // catId → subs[]
+  const [expanded, setExpanded] = useState({})
+  const [loading,  setLoading]  = useState(true)
+
+  useEffect(() => {
+    loadDocs(`users/${uid}/categories`).then(cs => { setCats(cs); setLoading(false) })
+  }, [uid])
+
+  const toggleSubs = async (catId) => {
+    if (subcats[catId]) {
+      setExpanded(e => ({ ...e, [catId]: !e[catId] }))
+    } else {
+      const subs = await loadDocs(`users/${uid}/categories/${catId}/subcategories`)
+      setSubcats(s => ({ ...s, [catId]: subs }))
+      setExpanded(e => ({ ...e, [catId]: true }))
+    }
+  }
+
+  const Row = ({ label, path, indent = 0 }) => {
+    const isCurrent = path === currentPath
+    const [hov, setHov] = useState(false)
+    return (
+      <button
+        onClick={() => !isCurrent && onPick(path)}
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        disabled={isCurrent}
+        style={{
+          display: 'block', width: '100%', textAlign: 'left',
+          padding: `8px 12px 8px ${12 + indent * 18}px`,
+          background: isCurrent ? T.accDim : hov ? T.s3 : 'none',
+          border: 'none', borderRadius: T.r,
+          color: isCurrent ? T.acc : T.text, fontSize: 13,
+          cursor: isCurrent ? 'default' : 'pointer',
+          transition: 'background 0.1s',
+          fontWeight: isCurrent ? 600 : 400,
+        }}
+      >{label}{isCurrent ? ' (aktuell)' : ''}</button>
+    )
+  }
+
+  return (
+    <Modal onClose={onClose} width={380}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Karte verschieben nach…</h3>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.textDim, cursor: 'pointer', fontSize: 18 }}>✕</button>
+      </div>
+      {loading ? (
+        <div style={{ color: T.textDim, fontSize: 13, padding: '12px 0' }}>Lädt…</div>
+      ) : (
+        <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+          {cats.map(cat => (
+            <div key={cat.id}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Row label={`📁 ${cat.name}`} path={`users/${uid}/categories/${cat.id}/cards`} />
+                <button
+                  onClick={() => toggleSubs(cat.id)}
+                  style={{ background: 'none', border: 'none', color: T.textDim, cursor: 'pointer', padding: '4px 6px', fontSize: 11, flexShrink: 0, transition: 'color 0.1s' }}
+                  onMouseEnter={e => e.currentTarget.style.color = T.acc}
+                  onMouseLeave={e => e.currentTarget.style.color = T.textDim}
+                >{expanded[cat.id] ? '▲' : '▼'}</button>
+              </div>
+              {expanded[cat.id] && subcats[cat.id]?.map(sub => (
+                <Row key={sub.id} label={`📂 ${sub.name}`} path={`users/${uid}/categories/${cat.id}/subcategories/${sub.id}/cards`} indent={1} />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+// ─── SHARE MODAL ──────────────────────────────────────────────────────────────
+const ShareModal = ({ catName, partnerName, onConfirm, onClose, sharing }) => (
+  <Modal onClose={onClose} width={400}>
+    <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 14 }}>🎁 Kartenset teilen</h3>
+    <p style={{ fontSize: 14, color: T.text, marginBottom: 8 }}>
+      <strong>"{catName}"</strong> wird mit <strong>{partnerName}</strong> geteilt.
+    </p>
+    <p style={{ fontSize: 13, color: T.textSub, marginBottom: 22 }}>
+      Alle Karten, Gruppen und Untergruppen werden kopiert.
+    </p>
+    <div style={{ display: 'flex', gap: 10 }}>
+      <Btn onClick={onConfirm} disabled={sharing} full>{sharing ? 'Wird geteilt…' : 'Teilen'}</Btn>
+      <Btn onClick={onClose} variant="secondary" style={{ flexShrink: 0, padding: '9px 16px' }}>Abbrechen</Btn>
+    </div>
+  </Modal>
+)
+
 // ─── LEARN MODE ───────────────────────────────────────────────────────────────
-const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
+const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
   const [phase,       setPhase]       = useState('settings') // settings|loading|session|result
   const [cardCount,   setCardCount]   = useState(() => Math.min(10, initCards.length))
   const [learnMode,   setLearnMode]   = useState('klassisch') // 'klassisch'|'ki'
@@ -1256,6 +1402,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
   const [kiError,     setKiError]     = useState('')
   const [wrongTips,   setWrongTips]   = useState({})  // cardId → tip string
   const [tipsLoading, setTipsLoading] = useState(false)
+  const sessionStartRef = useRef(null)
 
   const countOptions = (() => {
     const opts = [5, 10, 20].filter(n => n <= initCards.length)
@@ -1287,6 +1434,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
   const startSession = async () => {
     const count = Math.min(cardCount, initCards.length)
     setKiError('')
+    sessionStartRef.current = Date.now()
 
     if (learnMode === 'klassisch') {
       const shuffled = [...initCards].sort(() => Math.random() - 0.5)
@@ -1347,6 +1495,8 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose }) => {
     if (idx + 1 >= session.length) {
       setPhase('result')
       fetchWrongTips(newResults.filter(r => !r.knew))
+      const durationMinutes = Math.max(1, Math.round((Date.now() - (sessionStartRef.current || Date.now())) / 60000))
+      updateGlobalStats(uid, newResults.length, durationMinutes)
     } else {
       setIdx(i => i + 1)
       setFlipped(false)
@@ -1791,11 +1941,14 @@ const LoginScreen = () => {
 
 // ─── HOME SCREEN (Level 1: Hauptkategorien) ───────────────────────────────────
 const HomeScreen = ({ user, onOpen, onSettings }) => {
-  const [items,    setItems]    = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [modal,    setModal]    = useState(false)
-  const [renaming, setRenaming] = useState(null)
-  const [search,   setSearch]   = useState('')
+  const [items,       setItems]       = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [modal,       setModal]       = useState(false)
+  const [renaming,    setRenaming]    = useState(null)
+  const [search,      setSearch]      = useState('')
+  const [partnerInfo, setPartnerInfo] = useState(null) // { uid, name }
+  const [shareTarget, setShareTarget] = useState(null) // item being shared
+  const [sharing,     setSharing]     = useState(false)
   const t    = useT()
   const uid  = user.uid
   const path = `users/${uid}/categories`
@@ -1815,6 +1968,17 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    if (!uid) return
+    getDoc(doc(db, `users/${uid}/profile/main`))
+      .then(snap => {
+        if (snap.exists() && snap.data().partnerUid) {
+          setPartnerInfo({ uid: snap.data().partnerUid, name: snap.data().partnerName || 'Partner' })
+        }
+      })
+      .catch(() => {})
+  }, [uid])
+
   const create = async (name, color) => {
     try {
       await addDoc(collection(db, path), { name, color: color || 'blue', createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
@@ -1830,6 +1994,38 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
   const rename = async (id, name) => {
     await updateDoc(doc(db, `${path}/${id}`), { name, updatedAt: serverTimestamp() })
     setRenaming(null); load()
+  }
+
+  const shareWithPartner = async () => {
+    if (!shareTarget || !partnerInfo) return
+    setSharing(true)
+    const srcPath = `${path}/${shareTarget.id}`
+    const item = items.find(i => i.id === shareTarget.id)
+    try {
+      const dstCatRef = await addDoc(collection(db, `users/${partnerInfo.uid}/categories`), {
+        name: shareTarget.name, color: item?.color || 'blue',
+        sharedBy: { uid, name: user.displayName || user.email },
+        readOnly: true, createdAt: serverTimestamp(),
+      })
+      const dstBase = `users/${partnerInfo.uid}/categories/${dstCatRef.id}`
+      const srcCards = await loadDocs(`${srcPath}/cards`)
+      for (const c of srcCards) { const { id: _, ...r } = c; await addDoc(collection(db, `${dstBase}/cards`), r) }
+      const subcats = await loadDocs(`${srcPath}/subcategories`)
+      for (const sub of subcats) {
+        const { id: subId, ...subRest } = sub
+        const dstSubRef = await addDoc(collection(db, `${dstBase}/subcategories`), subRest)
+        const subCards = await loadDocs(`${srcPath}/subcategories/${subId}/cards`)
+        for (const c of subCards) { const { id: _, ...r } = c; await addDoc(collection(db, `${dstBase}/subcategories/${dstSubRef.id}/cards`), r) }
+        const subsubs = await loadDocs(`${srcPath}/subcategories/${subId}/subsubcategories`)
+        for (const ss of subsubs) {
+          const { id: ssId, ...ssRest } = ss
+          const dstSsRef = await addDoc(collection(db, `${dstBase}/subcategories/${dstSubRef.id}/subsubcategories`), ssRest)
+          const ssCards = await loadDocs(`${srcPath}/subcategories/${subId}/subsubcategories/${ssId}/cards`)
+          for (const c of ssCards) { const { id: _, ...r } = c; await addDoc(collection(db, `${dstBase}/subcategories/${dstSubRef.id}/subsubcategories/${dstSsRef.id}/cards`), r) }
+        }
+      }
+    } catch (e) { console.error('[Katara] shareWithPartner failed:', e) }
+    setSharing(false); setShareTarget(null)
   }
 
   const filtered = search.trim()
@@ -1900,7 +2096,49 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
         )}
 
         {!loading && items.length === 0 ? (
-          <Empty icon="📚" title={t.noCategories} sub={t.noCategoriesHint} />
+          <div className="fade-in" style={{ maxWidth: 500, margin: '0 auto', padding: '32px 0', textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 14 }}>📚</div>
+            <h3 style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 8 }}>Willkommen bei Katara!</h3>
+            <p style={{ fontSize: 14, color: T.textSub, marginBottom: 28, lineHeight: 1.6 }}>
+              Wähle einen Bereich oder erstelle eine eigene Kategorie.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
+              {[
+                { icon: '💼', label: 'Beruf', color: 'blue' },
+                { icon: '🎓', label: 'Schule', color: 'purple' },
+                { icon: '📖', label: 'Studium', color: 'green' },
+                { icon: '🎯', label: 'Hobby', color: 'amber' },
+              ].map(({ icon, label, color }) => {
+                const hex = catColor(color)
+                return (
+                  <button
+                    key={label}
+                    onClick={() => create(label, color)}
+                    style={{
+                      background: T.s2, border: `1px solid ${T.border}`,
+                      borderTop: `3px solid ${hex}`,
+                      borderRadius: T.r2, padding: '20px 14px',
+                      cursor: 'pointer', transition: 'all 0.15s',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = T.s3; e.currentTarget.style.borderColor = hex + '88' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = T.s2; e.currentTarget.style.borderColor = T.border }}
+                  >
+                    <span style={{ fontSize: 30 }}>{icon}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{label}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <button
+              onClick={() => setModal(true)}
+              style={{ background: 'none', border: 'none', color: T.textDim, fontSize: 13, cursor: 'pointer', textDecoration: 'underline', transition: 'color 0.12s' }}
+              onMouseEnter={e => e.currentTarget.style.color = T.textSub}
+              onMouseLeave={e => e.currentTarget.style.color = T.textDim}
+            >
+              Eigene Kategorie erstellen
+            </button>
+          </div>
         ) : !loading && filtered.length === 0 ? (
           <Empty icon="🔍" title="Keine Treffer" sub={`Keine Kategorie enthält "${search}".`} />
         ) : (
@@ -1911,28 +2149,31 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
                 onClick={() => onOpen(item)}
                 onRename={() => setRenaming(item)}
                 onDelete={() => remove(item.id)}
+                onShare={partnerInfo ? () => setShareTarget(item) : undefined}
               />
             ))}
           </div>
         )}
       </div>
 
-      {modal    && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
-      {renaming && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
+      {modal       && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
+      {renaming    && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
+      {shareTarget && <ShareModal catName={shareTarget.name} partnerName={partnerInfo?.name || 'Partner'} sharing={sharing} onConfirm={shareWithPartner} onClose={() => setShareTarget(null)} />}
     </div>
   )
 }
 
 // ─── SUBCATEGORY SCREEN (Level 2) ────────────────────────────────────────────
 const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
-  const [items,     setItems]     = useState([])
-  const [modal,     setModal]     = useState(false)
-  const [renaming,  setRenaming]  = useState(null)
-  const [cards,     setCards]     = useState([])
-  const [cardModal, setCardModal] = useState(null)
-  const [kiImport,  setKiImport]  = useState(false)
-  const [learning,  setLearning]  = useState(false)
-  const [rowLearn,  setRowLearn]  = useState(null) // { cards, cardsPath }
+  const [items,        setItems]        = useState([])
+  const [modal,        setModal]        = useState(false)
+  const [renaming,     setRenaming]     = useState(null)
+  const [cards,        setCards]        = useState([])
+  const [cardModal,    setCardModal]    = useState(null)
+  const [kiImport,     setKiImport]     = useState(false)
+  const [learning,     setLearning]     = useState(false)
+  const [rowLearn,     setRowLearn]     = useState(null) // { cards, cardsPath }
+  const [folderPicker, setFolderPicker] = useState(null) // card being moved
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories`
@@ -1970,6 +2211,13 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
   const removeCard = async id => {
     if (!confirm('Karte löschen?')) return
     await deleteDoc(doc(db, `${cardsPath}/${id}`)); load()
+  }
+  const moveCard = async (card, newPath) => {
+    if (newPath === cardsPath) { setFolderPicker(null); return }
+    const { id, ...data } = card
+    await addDoc(collection(db, newPath), data)
+    await deleteDoc(doc(db, `${cardsPath}/${id}`))
+    setFolderPicker(null); load()
   }
 
   return (
@@ -2025,16 +2273,17 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
               </Btn>
             </div>
             {cards.map(c => (
-              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} />
+              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} />
             ))}
           </div>
         )}
       </div>
-      {modal     && <CreateModal title={t.newGroup.replace('+ ','')} placeholder="z.B. Hauptsignale" onSave={create} onClose={() => setModal(false)} />}
-      {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
-      {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
-      {learning  && <LearnMode cards={cards} cardsPath={cardsPath} onClose={() => { setLearning(false); load() }} />}
-      {rowLearn  && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} onClose={() => { setRowLearn(null); load() }} />}
+      {modal        && <CreateModal title={t.newGroup.replace('+ ','')} placeholder="z.B. Hauptsignale" onSave={create} onClose={() => setModal(false)} />}
+      {renaming     && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
+      {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
+      {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
+      {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
       {kiImport  && (
         <KIImportScreen
           cardsPath={cardsPath}
@@ -2052,14 +2301,15 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
 
 // ─── SUBSUBCATEGORY SCREEN (Level 3) ─────────────────────────────────────────
 const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) => {
-  const [items,       setItems]       = useState([])
-  const [modal,       setModal]       = useState(false)
-  const [renaming,    setRenaming]    = useState(null)
-  const [cards,       setCards]       = useState([])
-  const [cardModal,   setCardModal]   = useState(null)
-  const [kiImport,    setKiImport]    = useState(false)
-  const [learning,    setLearning]    = useState(false)
-  const [rowLearn,    setRowLearn]    = useState(null) // { cards, cardsPath }
+  const [items,        setItems]        = useState([])
+  const [modal,        setModal]        = useState(false)
+  const [renaming,     setRenaming]     = useState(null)
+  const [cards,        setCards]        = useState([])
+  const [cardModal,    setCardModal]    = useState(null)
+  const [kiImport,     setKiImport]     = useState(false)
+  const [learning,     setLearning]     = useState(false)
+  const [rowLearn,     setRowLearn]     = useState(null) // { cards, cardsPath }
+  const [folderPicker, setFolderPicker] = useState(null) // card being moved
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories`
@@ -2097,6 +2347,13 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
   const removeCard = async id => {
     if (!confirm('Karte löschen?')) return
     await deleteDoc(doc(db, `${cardsPath}/${id}`)); load()
+  }
+  const moveCard = async (card, newPath) => {
+    if (newPath === cardsPath) { setFolderPicker(null); return }
+    const { id, ...data } = card
+    await addDoc(collection(db, newPath), data)
+    await deleteDoc(doc(db, `${cardsPath}/${id}`))
+    setFolderPicker(null); load()
   }
 
   return (
@@ -2151,16 +2408,17 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
               </Btn>
             </div>
             {cards.map(c => (
-              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} />
+              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} />
             ))}
           </div>
         )}
       </div>
-      {modal     && <CreateModal title={t.newSubgroup.replace('+ ','')} placeholder="z.B. Hp-Begriffe" onSave={create} onClose={() => setModal(false)} />}
-      {renaming  && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
-      {cardModal && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
-      {learning  && <LearnMode cards={cards} cardsPath={cardsPath} onClose={() => { setLearning(false); load() }} />}
-      {rowLearn  && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} onClose={() => { setRowLearn(null); load() }} />}
+      {modal        && <CreateModal title={t.newSubgroup.replace('+ ','')} placeholder="z.B. Hp-Begriffe" onSave={create} onClose={() => setModal(false)} />}
+      {renaming     && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
+      {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
+      {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
+      {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
       {kiImport  && (
         <KIImportScreen
           cardsPath={cardsPath}
@@ -2178,10 +2436,11 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
 
 // ─── CARDS SCREEN ─────────────────────────────────────────────────────────────
 const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
-  const [cards,     setCards]     = useState([])
-  const [cardModal, setCardModal] = useState(null)
-  const [kiImport,  setKiImport]  = useState(false)
-  const [learning,  setLearning]  = useState(false)
+  const [cards,        setCards]        = useState([])
+  const [cardModal,    setCardModal]    = useState(null)
+  const [kiImport,     setKiImport]     = useState(false)
+  const [learning,     setLearning]     = useState(false)
+  const [folderPicker, setFolderPicker] = useState(null) // card being moved
   const t = useT()
   const uid      = user.uid
   const basePath = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories/${subsub.id}`
@@ -2201,6 +2460,13 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
   const remove = async id => {
     if (!confirm('Karte löschen?')) return
     await deleteDoc(doc(db, `${cardsPath}/${id}`)); load()
+  }
+  const moveCard = async (card, newPath) => {
+    if (newPath === cardsPath) { setFolderPicker(null); return }
+    const { id, ...data } = card
+    await addDoc(collection(db, newPath), data)
+    await deleteDoc(doc(db, `${cardsPath}/${id}`))
+    setFolderPicker(null); load()
   }
 
   const avgMastery = cards.length
@@ -2252,13 +2518,14 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
           </Empty>
         ) : cards.map(c => (
-          <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => remove(c.id)} />
+          <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => remove(c.id)} onMove={card => setFolderPicker(card)} />
         ))}
       </div>
 
-      {cardModal  && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
-      {kiImport   && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
-      {learning   && <LearnMode cards={cards} cardsPath={cardsPath} onClose={() => { setLearning(false); load() }} />}
+      {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {kiImport     && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
+      {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
+      {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
     </div>
   )
 }
