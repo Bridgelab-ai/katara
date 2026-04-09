@@ -2347,13 +2347,26 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
     }
     setPartnerLoading(true); setPartnerMsg(null)
     try {
-      const snap = await getDocs(query(collection(db, 'users'), where('email', '==', email)))
-      if (snap.empty) {
-        setPartnerMsg({ ok: false, text: 'Nutzer nicht gefunden. Ist er/sie in Katara registriert?' })
+      // Primary: direct doc read via userIndex (no query, no cross-user rules issue)
+      let partnerUid = null
+      let partnerName = null
+      const emailKey = email.replace(/\./g, ',')
+      const idxSnap = await getDoc(doc(db, 'userIndex', emailKey))
+      if (idxSnap.exists()) {
+        partnerUid  = idxSnap.data().uid
+        partnerName = idxSnap.data().displayName || email
       } else {
-        const partnerDoc = snap.docs[0]
-        const partnerUid  = partnerDoc.id
-        const partnerName = partnerDoc.data().displayName || email
+        // Fallback: query users collection (requires Firestore rules to allow reads)
+        const snap = await getDocs(query(collection(db, 'users'), where('email', '==', email)))
+        if (!snap.empty) {
+          partnerUid  = snap.docs[0].id
+          partnerName = snap.docs[0].data().displayName || email
+        }
+      }
+
+      if (!partnerUid) {
+        setPartnerMsg({ ok: false, text: 'Kein Nutzer mit dieser E-Mail gefunden. Ist er/sie in Katara registriert?' })
+      } else {
         // Own profile
         await setDoc(doc(db, `users/${user.uid}/profile/main`), { partnerUid, partnerName }, { merge: true })
         // Back-reference on partner's profile
@@ -2363,7 +2376,8 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
         setPartnerEmail('')
         setPartnerMsg({ ok: true, text: `Verbunden mit ${partnerName}` })
       }
-    } catch (_) {
+    } catch (err) {
+      console.error('connectPartner:', err)
       setPartnerMsg({ ok: false, text: 'Fehler beim Suchen. Versuche es erneut.' })
     }
     setPartnerLoading(false)
@@ -3341,10 +3355,15 @@ export default function App() {
   // Register user email in public index so partners can find each other by email
   useEffect(() => {
     if (!user) return
-    setDoc(doc(db, 'users', user.uid), {
-      email: user.email?.toLowerCase(),
-      displayName: user.displayName || user.email,
-    }, { merge: true }).catch(() => {})
+    const email = user.email?.toLowerCase() || ''
+    const displayName = user.displayName || user.email || ''
+    // Write to users/{uid} for fallback query
+    setDoc(doc(db, 'users', user.uid), { email, displayName }, { merge: true }).catch(() => {})
+    // Write to userIndex/{emailKey} for direct-read lookup (no cross-user query needed)
+    if (email) {
+      const emailKey = email.replace(/\./g, ',')
+      setDoc(doc(db, 'userIndex', emailKey), { uid: user.uid, displayName }, { merge: true }).catch(() => {})
+    }
   }, [user?.uid])
 
   // Load dismissed tips from Firestore
