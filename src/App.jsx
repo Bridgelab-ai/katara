@@ -3,6 +3,7 @@ import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   collection, addDoc, getDocs, deleteDoc, doc, limit,
   serverTimestamp, query, orderBy, updateDoc, setDoc, getDoc, increment, onSnapshot,
+  where, deleteField,
 } from 'firebase/firestore'
 import { auth, db, provider } from './firebase'
 import './App.css'
@@ -2321,6 +2322,69 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
   const [saved,       setSaved]       = useState(false)
   const [tipsReset,   setTipsReset]   = useState(false)
 
+  // Partner
+  const [currentPartner,  setCurrentPartner]  = useState(null)   // { uid, name }
+  const [partnerChecking, setPartnerChecking] = useState(true)
+  const [partnerEmail,    setPartnerEmail]    = useState('')
+  const [partnerLoading,  setPartnerLoading]  = useState(false)
+  const [partnerMsg,      setPartnerMsg]      = useState(null)    // { ok: bool, text }
+
+  useEffect(() => {
+    getDoc(doc(db, `users/${user.uid}/profile/main`))
+      .then(snap => {
+        if (snap.exists() && snap.data().partnerUid)
+          setCurrentPartner({ uid: snap.data().partnerUid, name: snap.data().partnerName || 'Partner' })
+        setPartnerChecking(false)
+      })
+      .catch(() => setPartnerChecking(false))
+  }, [user.uid])
+
+  const connectPartner = async () => {
+    const email = partnerEmail.trim().toLowerCase()
+    if (!email) return
+    if (email === (user.email || '').toLowerCase()) {
+      setPartnerMsg({ ok: false, text: 'Das ist deine eigene E-Mail-Adresse.' }); return
+    }
+    setPartnerLoading(true); setPartnerMsg(null)
+    try {
+      const snap = await getDocs(query(collection(db, 'users'), where('email', '==', email)))
+      if (snap.empty) {
+        setPartnerMsg({ ok: false, text: 'Nutzer nicht gefunden. Ist er/sie in Katara registriert?' })
+      } else {
+        const partnerDoc = snap.docs[0]
+        const partnerUid  = partnerDoc.id
+        const partnerName = partnerDoc.data().displayName || email
+        // Own profile
+        await setDoc(doc(db, `users/${user.uid}/profile/main`), { partnerUid, partnerName }, { merge: true })
+        // Back-reference on partner's profile
+        await setDoc(doc(db, `users/${partnerUid}/profile/main`),
+          { partnerUid: user.uid, partnerName: user.displayName || user.email }, { merge: true })
+        setCurrentPartner({ uid: partnerUid, name: partnerName })
+        setPartnerEmail('')
+        setPartnerMsg({ ok: true, text: `Verbunden mit ${partnerName}` })
+      }
+    } catch (_) {
+      setPartnerMsg({ ok: false, text: 'Fehler beim Suchen. Versuche es erneut.' })
+    }
+    setPartnerLoading(false)
+  }
+
+  const disconnectPartner = async () => {
+    if (!currentPartner) return
+    setPartnerLoading(true)
+    try {
+      await updateDoc(doc(db, `users/${user.uid}/profile/main`),
+        { partnerUid: deleteField(), partnerName: deleteField() })
+      await updateDoc(doc(db, `users/${currentPartner.uid}/profile/main`),
+        { partnerUid: deleteField(), partnerName: deleteField() }).catch(() => {})
+      setCurrentPartner(null)
+      setPartnerMsg({ ok: true, text: 'Verbindung getrennt.' })
+    } catch (_) {
+      setPartnerMsg({ ok: false, text: 'Fehler beim Trennen.' })
+    }
+    setPartnerLoading(false)
+  }
+
   const save = async () => {
     setSaving(true)
     const data = { lang, dailyGoal, defaultMode }
@@ -2394,6 +2458,61 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
           <Btn onClick={() => signOut(auth)} variant="danger" style={{ padding: '8px 16px', fontSize: 13 }}>
             {t.signOut}
           </Btn>
+        </SectionCard>
+
+        <SectionCard label="👥 Partner verbinden">
+          {partnerChecking ? (
+            <div style={{ fontSize: 13, color: T.textDim }}>Wird geladen…</div>
+          ) : currentPartner ? (
+            <div>
+              <div style={{ fontSize: 13, color: T.textSub, marginBottom: 6, lineHeight: 1.6 }}>
+                Verbunden mit{' '}
+                <strong style={{ color: T.green }}>{currentPartner.name}</strong>
+              </div>
+              <div style={{ fontSize: 12, color: T.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+                Ihr könnt euch gegenseitig Karten über das ⋮ Menü senden.
+              </div>
+              <Btn
+                onClick={disconnectPartner}
+                disabled={partnerLoading}
+                variant="danger"
+                style={{ padding: '8px 16px', fontSize: 13 }}
+              >
+                {partnerLoading ? 'Wird getrennt…' : 'Verbindung trennen'}
+              </Btn>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: 13, color: T.textSub, marginBottom: 14, lineHeight: 1.6 }}>
+                Gib die E-Mail-Adresse deines Partners ein. Er/sie muss ebenfalls in Katara registriert sein.
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input
+                  type="email"
+                  value={partnerEmail}
+                  onChange={e => { setPartnerEmail(e.target.value); setPartnerMsg(null) }}
+                  onKeyDown={e => e.key === 'Enter' && connectPartner()}
+                  placeholder="partner@beispiel.de"
+                  style={{ flex: 1, minWidth: 180 }}
+                />
+                <Btn
+                  onClick={connectPartner}
+                  disabled={partnerLoading || !partnerEmail.trim()}
+                  style={{ padding: '9px 18px', flexShrink: 0 }}
+                >
+                  {partnerLoading ? 'Suche…' : 'Verbinden'}
+                </Btn>
+              </div>
+            </div>
+          )}
+          {partnerMsg && (
+            <div style={{
+              fontSize: 13, marginTop: 12, lineHeight: 1.5,
+              color: partnerMsg.ok ? T.green : T.red,
+            }}>
+              {partnerMsg.ok ? '✓ ' : '✗ '}{partnerMsg.text}
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard label="Hilfe & Tipps">
@@ -3195,6 +3314,15 @@ export default function App() {
     getDoc(doc(db, `users/${user.uid}/settings/preferences`))
       .then(snap => { if (snap.exists()) setSettings(snap.data()) })
       .catch(() => {})
+  }, [user?.uid])
+
+  // Register user email in public index so partners can find each other by email
+  useEffect(() => {
+    if (!user) return
+    setDoc(doc(db, 'users', user.uid), {
+      email: user.email?.toLowerCase(),
+      displayName: user.displayName || user.email,
+    }, { merge: true }).catch(() => {})
   }, [user?.uid])
 
   // Load dismissed tips from Firestore
