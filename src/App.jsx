@@ -695,26 +695,73 @@ const RenameModal = ({ current, onSave, onClose }) => {
 }
 
 // ─── CONFIRM SEND MODAL ───────────────────────────────────────────────────────
-const ConfirmSendModal = ({ itemName, partnerName, onConfirm, onClose }) => {
-  const [sending, setSending] = useState(false)
-  const confirm = async () => {
-    setSending(true)
-    try { await onConfirm() } catch (_) {}
-    setSending(false)
-    onClose()
+// Self-contained: fetches partner live on open, handles all states internally
+const SendToPartnerModal = ({ uid, displayName, name, getCards, onClose }) => {
+  const [step,    setStep]    = useState('loading') // loading|no-partner|confirm|sending|done
+  const [partner, setPartner] = useState(null)
+
+  useEffect(() => {
+    getDoc(doc(db, `users/${uid}/profile/main`))
+      .then(snap => {
+        if (snap.exists() && snap.data().partnerUid) {
+          setPartner({ uid: snap.data().partnerUid, name: snap.data().partnerName || 'Partner' })
+          setStep('confirm')
+        } else {
+          setStep('no-partner')
+        }
+      })
+      .catch(() => setStep('no-partner'))
+  }, [uid])
+
+  const send = async () => {
+    if (!partner) return
+    setStep('sending')
+    try {
+      const cards = await getCards()
+      await sendItemToPartner(partner.uid, uid, displayName, name, cards)
+      setStep('done')
+      setTimeout(onClose, 1400)
+    } catch (_) { setStep('confirm') }
   }
+
   return (
-    <Modal onClose={onClose} width={380}>
-      <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 12 }}>📤 An Partner senden</h3>
-      <p style={{ fontSize: 14, color: T.textSub, marginBottom: 22, lineHeight: 1.6 }}>
-        <strong style={{ color: T.text }}>{itemName}</strong> an <strong style={{ color: T.text }}>{partnerName}</strong> senden?
-        <br />
-        <span style={{ fontSize: 12, color: T.textDim }}>Partner sieht eine Benachrichtigung und kann annehmen oder ablehnen.</span>
-      </p>
-      <div style={{ display: 'flex', gap: 10 }}>
-        <Btn onClick={confirm} disabled={sending} full>{sending ? 'Wird gesendet…' : '✓ Senden'}</Btn>
-        <Btn onClick={onClose} variant="secondary" style={{ flexShrink: 0, padding: '9px 16px' }}>Abbrechen</Btn>
-      </div>
+    <Modal onClose={step !== 'sending' ? onClose : () => {}} width={380}>
+      {step === 'loading' && (
+        <div style={{ textAlign: 'center', padding: '24px 0', color: T.textSub, fontSize: 14 }}>Wird geladen…</div>
+      )}
+      {step === 'no-partner' && (
+        <>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: T.text, marginBottom: 12 }}>📤 An Partner senden</h3>
+          <p style={{ fontSize: 14, color: T.textSub, marginBottom: 20, lineHeight: 1.7 }}>
+            Kein Partner verbunden.<br />
+            <span style={{ fontSize: 12, color: T.textDim }}>Gehe zu Einstellungen, um einen Partner zu verknüpfen.</span>
+          </p>
+          <Btn onClick={onClose} variant="secondary" full>Schließen</Btn>
+        </>
+      )}
+      {step === 'confirm' && (
+        <>
+          <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 12 }}>📤 An Partner senden</h3>
+          <p style={{ fontSize: 14, color: T.textSub, marginBottom: 22, lineHeight: 1.6 }}>
+            <strong style={{ color: T.text }}>{name}</strong> an <strong style={{ color: T.text }}>{partner?.name}</strong> senden?
+            <br />
+            <span style={{ fontSize: 12, color: T.textDim }}>Partner erhält eine Benachrichtigung zum Annehmen.</span>
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Btn onClick={send} full>✓ Senden</Btn>
+            <Btn onClick={onClose} variant="secondary" style={{ flexShrink: 0, padding: '9px 16px' }}>Abbrechen</Btn>
+          </div>
+        </>
+      )}
+      {step === 'sending' && (
+        <div style={{ textAlign: 'center', padding: '24px 0', color: T.textSub, fontSize: 14 }}>Wird gesendet…</div>
+      )}
+      {step === 'done' && (
+        <div style={{ textAlign: 'center', padding: '24px 0' }}>
+          <div style={{ fontSize: 36, marginBottom: 10, color: T.green }}>✓</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: T.green }}>Gesendet!</div>
+        </div>
+      )}
     </Modal>
   )
 }
@@ -866,10 +913,10 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
       >
         <CtxMenu items={[
           { label: t.rename,                                  action: onRename },
-          ...(onMove           ? [{ label: '↗ Verschieben',         action: onMove           }] : []),
-          ...(onExport         ? [{ label: '📤 Exportieren',        action: onExport         }] : []),
-          ...(onSendToPartner  ? [{ label: '📤 An Partner senden',  action: onSendToPartner  }] : []),
-          ...(onShare          ? [{ label: '🎁 Mit Partner teilen', action: onShare          }] : []),
+          ...(onMove   ? [{ label: '↗ Verschieben',         action: onMove   }] : []),
+          ...(onExport ? [{ label: '📤 Exportieren',        action: onExport }] : []),
+          { label: '📤 An Partner senden', action: onSendToPartner },
+          ...(onShare  ? [{ label: '🎁 Mit Partner teilen', action: onShare  }] : []),
           { label: t.delete, action: onDelete, danger: true },
         ]} />
       </div>
@@ -941,9 +988,9 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
         <div onClick={e => e.stopPropagation()}>
           <CtxMenu items={[
             { label: t.rename,                                 action: onRename },
-            ...(onMove          ? [{ label: '↗ Verschieben',        action: onMove          }] : []),
-            ...(onExport        ? [{ label: '📤 Exportieren',       action: onExport        }] : []),
-            ...(onSendToPartner ? [{ label: '📤 An Partner senden', action: onSendToPartner }] : []),
+            ...(onMove   ? [{ label: '↗ Verschieben',  action: onMove   }] : []),
+            ...(onExport ? [{ label: '📤 Exportieren', action: onExport }] : []),
+            { label: '📤 An Partner senden', action: onSendToPartner },
             { label: t.delete, action: onDelete, danger: true },
           ]} />
         </div>
@@ -1017,14 +1064,12 @@ const CardItem = ({ card, onEdit, onDelete, onMove, onSendToPartner }) => {
           onMouseEnter={e => e.currentTarget.style.color = T.red}
           onMouseLeave={e => e.currentTarget.style.color = T.textDim}
         >🗑</button>
-        {(onMove || onSendToPartner) && (
-          <div onClick={e => e.stopPropagation()}>
-            <CtxMenu items={[
-              ...(onMove          ? [{ label: '↗ Verschieben',        action: () => onMove(card) }] : []),
-              ...(onSendToPartner ? [{ label: '📤 An Partner senden', action: () => onSendToPartner(card) }] : []),
-            ]} />
-          </div>
-        )}
+        <div onClick={e => e.stopPropagation()}>
+          <CtxMenu items={[
+            ...(onMove ? [{ label: '↗ Verschieben', action: () => onMove(card) }] : []),
+            { label: '📤 An Partner senden', action: () => onSendToPartner?.(card) },
+          ]} />
+        </div>
       </div>
     </div>
   )
@@ -2663,10 +2708,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0 }) => {
                   if (!dismissed.has('teilen')) { setActiveTip('teilen'); setShareTarget(item) }
                   else setShareTarget(item)
                 } : undefined}
-                onSendToPartner={partnerUid ? () => setSendTarget({
-                  name: item.name,
-                  getCards: () => collectAllCards(uid, item.id),
-                }) : undefined}
+                onSendToPartner={() => setSendTarget({ name: item.name, getCards: () => collectAllCards(uid, item.id) })}
               />
             ))}
           </div>
@@ -2677,7 +2719,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0 }) => {
       {renaming    && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {shareTarget && activeTip === 'teilen' && <TipModal tipKey="teilen" onClose={() => setActiveTip(null)} />}
       {shareTarget && activeTip !== 'teilen' && <ShareModal catName={shareTarget.name} partnerName={partnerInfo?.name || 'Partner'} sharing={sharing} onConfirm={shareWithPartner} onClose={() => setShareTarget(null)} />}
-      {sendTarget  && <ConfirmSendModal itemName={sendTarget.name} partnerName={partnerName || 'Partner'} onConfirm={async () => { const cs = await sendTarget.getCards(); await sendItemToPartner(partnerUid, uid, user.displayName || user.email, sendTarget.name, cs) }} onClose={() => setSendTarget(null)} />}
+      {sendTarget  && <SendToPartnerModal uid={uid} displayName={user.displayName || user.email} name={sendTarget.name} getCards={sendTarget.getCards} onClose={() => setSendTarget(null)} />}
       {exportData  && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
       {movingCat   && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={movingCat.id} onPick={handleCatMove} onClose={() => setMovingCat(null)} />}
       {moving      && (
@@ -2803,7 +2845,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
                   if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p })
                   else onOpen(item)
                 }}
-                onSendToPartner={partnerUid ? () => setSendTarget({
+                onSendToPartner={() => setSendTarget({
                   name: item.name,
                   getCards: async () => {
                     const direct = await loadDocs(`${path}/${item.id}/cards`)
@@ -2811,7 +2853,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
                     const deep = (await Promise.all(subsubs.map(ss => loadDocs(`${path}/${item.id}/subsubcategories/${ss.id}/cards`)))).flat()
                     return [...direct, ...deep]
                   },
-                }) : undefined}
+                })}
               />
             ))}
           </>
@@ -2827,7 +2869,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
               </Btn>
             </div>
             {cards.map(c => (
-              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={partnerUid ? card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] }) : undefined} />
+              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
             ))}
           </div>
         )}
@@ -2836,7 +2878,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
       {renaming     && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const t = activeTip; setActiveTip(null); if (t === 'ki-import') setKiImport(true); else if (t === 'lernen') setLearning(true) }} />}
-      {sendTarget   && <ConfirmSendModal itemName={sendTarget.name} partnerName={partnerName || 'Partner'} onConfirm={async () => { const cs = await sendTarget.getCards(); await sendItemToPartner(partnerUid, uid, user.displayName || user.email, sendTarget.name, cs) }} onClose={() => setSendTarget(null)} />}
+      {sendTarget   && <SendToPartnerModal uid={uid} displayName={user.displayName || user.email} name={sendTarget.name} getCards={sendTarget.getCards} onClose={() => setSendTarget(null)} />}
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
@@ -2975,10 +3017,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
                   const cs = await loadDocs(p)
                   if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p })
                 } : undefined}
-                onSendToPartner={partnerUid ? () => setSendTarget({
-                  name: item.name,
-                  getCards: () => loadDocs(`${path}/${item.id}/cards`),
-                }) : undefined}
+                onSendToPartner={() => setSendTarget({ name: item.name, getCards: () => loadDocs(`${path}/${item.id}/cards`) })}
               />
             ))}
           </>
@@ -2994,7 +3033,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
               </Btn>
             </div>
             {cards.map(c => (
-              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={partnerUid ? card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] }) : undefined} />
+              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
             ))}
           </div>
         )}
@@ -3003,7 +3042,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
       {renaming     && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const tip = activeTip; setActiveTip(null); if (tip === 'ki-import') setKiImport(true); else if (tip === 'lernen') setLearning(true) }} />}
-      {sendTarget   && <ConfirmSendModal itemName={sendTarget.name} partnerName={partnerName || 'Partner'} onConfirm={async () => { const cs = await sendTarget.getCards(); await sendItemToPartner(partnerUid, uid, user.displayName || user.email, sendTarget.name, cs) }} onClose={() => setSendTarget(null)} />}
+      {sendTarget   && <SendToPartnerModal uid={uid} displayName={user.displayName || user.email} name={sendTarget.name} getCards={sendTarget.getCards} onClose={() => setSendTarget(null)} />}
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
@@ -3123,13 +3162,13 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
           </Empty>
         ) : cards.map(c => (
-          <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => remove(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={partnerUid ? card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] }) : undefined} />
+          <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => remove(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
         ))}
       </div>
 
       {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const tip = activeTip; setActiveTip(null); if (tip === 'ki-import') setKiImport(true); else if (tip === 'lernen') setLearning(true) }} />}
-      {sendTarget   && <ConfirmSendModal itemName={sendTarget.name} partnerName={partnerName || 'Partner'} onConfirm={async () => { const cs = await sendTarget.getCards(); await sendItemToPartner(partnerUid, uid, user.displayName || user.email, sendTarget.name, cs) }} onClose={() => setSendTarget(null)} />}
+      {sendTarget   && <SendToPartnerModal uid={uid} displayName={user.displayName || user.email} name={sendTarget.name} getCards={sendTarget.getCards} onClose={() => setSendTarget(null)} />}
       {kiImport     && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
