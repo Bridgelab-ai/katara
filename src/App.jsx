@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, createContext, useContext } f
 import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   collection, addDoc, getDocs, deleteDoc, doc, limit,
-  serverTimestamp, query, orderBy, updateDoc, setDoc, getDoc, increment,
+  serverTimestamp, query, orderBy, updateDoc, setDoc, getDoc, increment, onSnapshot,
 } from 'firebase/firestore'
 import { auth, db, provider } from './firebase'
 import './App.css'
@@ -91,6 +91,10 @@ const TIPS = {
     body: 'Deine Karten werden vollständig in die App deines Partners kopiert. Änderungen danach werden nicht synchronisiert — es ist eine einmalige Kopie.',
   },
 }
+
+// ─── PARTNER CONTEXT ──────────────────────────────────────────────────────────
+const PartnerContext = createContext({ partnerUid: null, partnerName: null })
+const usePartner = () => useContext(PartnerContext)
 
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 const toBase64 = f => new Promise((res, rej) => {
@@ -252,6 +256,16 @@ const moveSubsubcatToSub = async (uid, srcCatId, srcSubId, srcSsId, dstCatId, ds
   const cards = await loadDocs(`${srcBase}/cards`)
   for (const c of cards) { const { id: _, ...d } = c; await addDoc(collection(db, `${dstBase}/cards`), d); await deleteDoc(doc(db, `${srcBase}/cards/${c.id}`)) }
   await deleteDoc(doc(db, srcBase))
+}
+
+// Write to partner's sharedFromPartner inbox
+const sendItemToPartner = async (partnerUid, fromUid, fromName, name, cards) => {
+  const cleanCards = cards.map(({ id: _id, _count: _c, ...rest }) => rest)
+  await addDoc(collection(db, `users/${partnerUid}/sharedFromPartner`), {
+    name, fromUid, fromName: fromName || fromUid,
+    cards: cleanCards,
+    sentAt: serverTimestamp(),
+  })
 }
 
 // ─── CATEGORY COLORS ─────────────────────────────────────────────────────────
@@ -566,13 +580,14 @@ const CtxMenu = ({ items }) => {
         onClick={() => setOpen(o => !o)}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: 28, height: 28, borderRadius: 6,
-          background: open ? T.s3 : 'none', border: 'none',
-          cursor: 'pointer', color: T.textSub, fontSize: 16,
-          transition: 'all 0.12s',
+          width: 36, height: 36, borderRadius: 8,
+          background: open ? T.s4 : 'rgba(255,255,255,0.10)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          cursor: 'pointer', color: '#fff', fontSize: 17,
+          transition: 'all 0.12s', flexShrink: 0,
         }}
-        onMouseEnter={e => e.currentTarget.style.background = T.s3}
-        onMouseLeave={e => { if (!open) e.currentTarget.style.background = 'none' }}
+        onMouseEnter={e => { e.currentTarget.style.background = T.s4; e.currentTarget.style.borderColor = T.border }}
+        onMouseLeave={e => { if (!open) { e.currentTarget.style.background = 'rgba(255,255,255,0.10)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' } }}
       >
         ···
       </button>
@@ -679,6 +694,77 @@ const RenameModal = ({ current, onSave, onClose }) => {
   )
 }
 
+// ─── CONFIRM SEND MODAL ───────────────────────────────────────────────────────
+const ConfirmSendModal = ({ itemName, partnerName, onConfirm, onClose }) => {
+  const [sending, setSending] = useState(false)
+  const confirm = async () => {
+    setSending(true)
+    try { await onConfirm() } catch (_) {}
+    setSending(false)
+    onClose()
+  }
+  return (
+    <Modal onClose={onClose} width={380}>
+      <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 12 }}>📤 An Partner senden</h3>
+      <p style={{ fontSize: 14, color: T.textSub, marginBottom: 22, lineHeight: 1.6 }}>
+        <strong style={{ color: T.text }}>{itemName}</strong> an <strong style={{ color: T.text }}>{partnerName}</strong> senden?
+        <br />
+        <span style={{ fontSize: 12, color: T.textDim }}>Partner sieht eine Benachrichtigung und kann annehmen oder ablehnen.</span>
+      </p>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <Btn onClick={confirm} disabled={sending} full>{sending ? 'Wird gesendet…' : '✓ Senden'}</Btn>
+        <Btn onClick={onClose} variant="secondary" style={{ flexShrink: 0, padding: '9px 16px' }}>Abbrechen</Btn>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── INCOMING SHARE MODAL ─────────────────────────────────────────────────────
+const IncomingShareModal = ({ item, onAccept, onDecline }) => {
+  const [loading, setLoading] = useState(false)
+  const handle = async accept => {
+    setLoading(true)
+    try { if (accept) await onAccept(item); else await onDecline(item) } catch (_) {}
+    setLoading(false)
+  }
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 800,
+      background: 'rgba(8,11,20,0.85)', backdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+    }}>
+      <div className="fade-in" style={{
+        width: '100%', maxWidth: 400,
+        background: T.s2, border: `1px solid ${T.border}`,
+        borderRadius: T.r3, padding: 28,
+        boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+        textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 42, marginBottom: 12 }}>🎁</div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 8 }}>
+          {item.fromName} hat dir etwas geschickt!
+        </h3>
+        <p style={{ fontSize: 14, color: T.textSub, marginBottom: 6, lineHeight: 1.6 }}>
+          <strong style={{ color: T.text }}>{item.name}</strong>
+        </p>
+        {item.cards?.length > 0 && (
+          <p style={{ fontSize: 12, color: T.textDim, marginBottom: 22 }}>
+            {item.cards.length} {item.cards.length === 1 ? 'Karte' : 'Karten'}
+          </p>
+        )}
+        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          <Btn onClick={() => handle(true)} disabled={loading} full variant="success">
+            {loading ? 'Wird verarbeitet…' : '✓ Annehmen'}
+          </Btn>
+          <Btn onClick={() => handle(false)} disabled={loading} variant="danger" style={{ flexShrink: 0, padding: '9px 16px' }}>
+            ✗ Ablehnen
+          </Btn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── MASTERY BAR ──────────────────────────────────────────────────────────────
 const MasteryBar = ({ value, height = 4, style = {} }) => {
   const color = value >= 80 ? T.green : value >= 40 ? T.acc : T.textDim
@@ -700,7 +786,7 @@ const SectionLabel = ({ children }) => (
 )
 
 // ─── FOLDER CARD (grid tile — Level 1) ───────────────────────────────────────
-const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExport }) => {
+const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExport, onSendToPartner }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
   const groupCount = item._count ?? 0
@@ -773,16 +859,17 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         </div>
       )}
 
-      {/* Context menu */}
+      {/* Context menu — always visible */}
       <div
-        style={{ position: 'absolute', top: 10, right: 10, opacity: hov ? 1 : 0, transition: 'opacity 0.15s' }}
+        style={{ position: 'absolute', top: 10, right: 10 }}
         onClick={e => e.stopPropagation()}
       >
         <CtxMenu items={[
-          { label: t.rename, action: onRename },
-          ...(onMove   ? [{ label: '↗ Verschieben',         action: onMove   }] : []),
-          ...(onExport ? [{ label: '📤 Exportieren',        action: onExport }] : []),
-          ...(onShare  ? [{ label: '🎁 Mit Partner teilen', action: onShare  }] : []),
+          { label: t.rename,                                  action: onRename },
+          ...(onMove           ? [{ label: '↗ Verschieben',         action: onMove           }] : []),
+          ...(onExport         ? [{ label: '📤 Exportieren',        action: onExport         }] : []),
+          ...(onSendToPartner  ? [{ label: '📤 An Partner senden',  action: onSendToPartner  }] : []),
+          ...(onShare          ? [{ label: '🎁 Mit Partner teilen', action: onShare          }] : []),
           { label: t.delete, action: onDelete, danger: true },
         ]} />
       </div>
@@ -791,7 +878,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
 }
 
 // ─── FOLDER ROW (list — Levels 2 & 3) ────────────────────────────────────────
-const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor, onLearn, onMove, onExport }) => {
+const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor, onLearn, onMove, onExport, onSendToPartner }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
   const color = accentColor || T.acc
@@ -851,11 +938,12 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ opacity: hov ? 0.6 : 0.2, transition: 'opacity 0.15s' }}>
           <path d="M5 2.5L9.5 7L5 11.5" stroke={T.textSub} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
-        <div style={{ opacity: hov ? 1 : 0, transition: 'opacity 0.15s' }} onClick={e => e.stopPropagation()}>
+        <div onClick={e => e.stopPropagation()}>
           <CtxMenu items={[
-            { label: t.rename, action: onRename },
-            ...(onMove   ? [{ label: '↗ Verschieben',  action: onMove   }] : []),
-            ...(onExport ? [{ label: '📤 Exportieren', action: onExport }] : []),
+            { label: t.rename,                                 action: onRename },
+            ...(onMove          ? [{ label: '↗ Verschieben',        action: onMove          }] : []),
+            ...(onExport        ? [{ label: '📤 Exportieren',       action: onExport        }] : []),
+            ...(onSendToPartner ? [{ label: '📤 An Partner senden', action: onSendToPartner }] : []),
             { label: t.delete, action: onDelete, danger: true },
           ]} />
         </div>
@@ -865,7 +953,7 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
 }
 
 // ─── CARD LIST ITEM ───────────────────────────────────────────────────────────
-const CardItem = ({ card, onEdit, onDelete, onMove }) => {
+const CardItem = ({ card, onEdit, onDelete, onMove, onSendToPartner }) => {
   const [hov, setHov] = useState(false)
   const m = card.mastery || 0
   const mColor = m >= 3 ? T.green : m >= 2 ? T.acc : m >= 1 ? T.red : T.textDim
@@ -929,9 +1017,12 @@ const CardItem = ({ card, onEdit, onDelete, onMove }) => {
           onMouseEnter={e => e.currentTarget.style.color = T.red}
           onMouseLeave={e => e.currentTarget.style.color = T.textDim}
         >🗑</button>
-        {onMove && (
+        {(onMove || onSendToPartner) && (
           <div onClick={e => e.stopPropagation()}>
-            <CtxMenu items={[{ label: '↗ Verschieben', action: () => onMove(card) }]} />
+            <CtxMenu items={[
+              ...(onMove          ? [{ label: '↗ Verschieben',        action: () => onMove(card) }] : []),
+              ...(onSendToPartner ? [{ label: '📤 An Partner senden', action: () => onSendToPartner(card) }] : []),
+            ]} />
           </div>
         )}
       </div>
@@ -2348,14 +2439,16 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0 }) => {
   const [modal,       setModal]       = useState(false)
   const [renaming,    setRenaming]    = useState(null)
   const [search,      setSearch]      = useState('')
-  const [partnerInfo, setPartnerInfo] = useState(null) // { uid, name }
-  const [shareTarget, setShareTarget] = useState(null) // item being shared
+  const [shareTarget, setShareTarget] = useState(null) // item being shared (for Mit Partner teilen)
   const [sharing,     setSharing]     = useState(false)
+  const [sendTarget,  setSendTarget]  = useState(null) // { name, getCards } for An Partner senden
   const [movingCat,   setMovingCat]   = useState(null) // item being moved
   const [moving,      setMoving]      = useState(false)
   const [exportData,  setExportData]  = useState(null) // { cards, name }
   const [activeTip,   setActiveTip]   = useState(null)
   const { dismissed, dismiss }        = useTips()
+  const { partnerUid, partnerName }   = usePartner()
+  const partnerInfo = partnerUid ? { uid: partnerUid, name: partnerName } : null
   const t    = useT()
   const uid  = user.uid
   const path = `users/${uid}/categories`
@@ -2374,17 +2467,6 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0 }) => {
   }, [path, uid])
 
   useEffect(() => { load() }, [load])
-
-  useEffect(() => {
-    if (!uid) return
-    getDoc(doc(db, `users/${uid}/profile/main`))
-      .then(snap => {
-        if (snap.exists() && snap.data().partnerUid) {
-          setPartnerInfo({ uid: snap.data().partnerUid, name: snap.data().partnerName || 'Partner' })
-        }
-      })
-      .catch(() => {})
-  }, [uid])
 
   const create = async (name, color) => {
     try {
@@ -2581,6 +2663,10 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0 }) => {
                   if (!dismissed.has('teilen')) { setActiveTip('teilen'); setShareTarget(item) }
                   else setShareTarget(item)
                 } : undefined}
+                onSendToPartner={partnerUid ? () => setSendTarget({
+                  name: item.name,
+                  getCards: () => collectAllCards(uid, item.id),
+                }) : undefined}
               />
             ))}
           </div>
@@ -2591,6 +2677,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0 }) => {
       {renaming    && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {shareTarget && activeTip === 'teilen' && <TipModal tipKey="teilen" onClose={() => setActiveTip(null)} />}
       {shareTarget && activeTip !== 'teilen' && <ShareModal catName={shareTarget.name} partnerName={partnerInfo?.name || 'Partner'} sharing={sharing} onConfirm={shareWithPartner} onClose={() => setShareTarget(null)} />}
+      {sendTarget  && <ConfirmSendModal itemName={sendTarget.name} partnerName={partnerName || 'Partner'} onConfirm={async () => { const cs = await sendTarget.getCards(); await sendItemToPartner(partnerUid, uid, user.displayName || user.email, sendTarget.name, cs) }} onClose={() => setSendTarget(null)} />}
       {exportData  && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
       {movingCat   && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={movingCat.id} onPick={handleCatMove} onClose={() => setMovingCat(null)} />}
       {moving      && (
@@ -2617,7 +2704,9 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
   const [moving,       setMoving]       = useState(false)
   const [exportData,   setExportData]   = useState(null) // { cards, name }
   const [activeTip,    setActiveTip]    = useState(null)
+  const [sendTarget,   setSendTarget]   = useState(null) // { name, getCards }
   const { dismissed }  = useTips()
+  const { partnerUid, partnerName }     = usePartner()
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories`
@@ -2714,6 +2803,15 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
                   if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p })
                   else onOpen(item)
                 }}
+                onSendToPartner={partnerUid ? () => setSendTarget({
+                  name: item.name,
+                  getCards: async () => {
+                    const direct = await loadDocs(`${path}/${item.id}/cards`)
+                    const subsubs = await loadDocs(`${path}/${item.id}/subsubcategories`)
+                    const deep = (await Promise.all(subsubs.map(ss => loadDocs(`${path}/${item.id}/subsubcategories/${ss.id}/cards`)))).flat()
+                    return [...direct, ...deep]
+                  },
+                }) : undefined}
               />
             ))}
           </>
@@ -2729,7 +2827,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
               </Btn>
             </div>
             {cards.map(c => (
-              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} />
+              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={partnerUid ? card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] }) : undefined} />
             ))}
           </div>
         )}
@@ -2738,6 +2836,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
       {renaming     && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const t = activeTip; setActiveTip(null); if (t === 'ki-import') setKiImport(true); else if (t === 'lernen') setLearning(true) }} />}
+      {sendTarget   && <ConfirmSendModal itemName={sendTarget.name} partnerName={partnerName || 'Partner'} onConfirm={async () => { const cs = await sendTarget.getCards(); await sendItemToPartner(partnerUid, uid, user.displayName || user.email, sendTarget.name, cs) }} onClose={() => setSendTarget(null)} />}
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
@@ -2779,6 +2878,8 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
   const [exportData,   setExportData]   = useState(null) // { cards, name }
   const [activeTip,    setActiveTip]    = useState(null)
   const { dismissed }  = useTips()
+  const { partnerUid, partnerName }     = usePartner()
+  const [sendTarget,   setSendTarget]   = useState(null)
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories`
@@ -2874,6 +2975,10 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
                   const cs = await loadDocs(p)
                   if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p })
                 } : undefined}
+                onSendToPartner={partnerUid ? () => setSendTarget({
+                  name: item.name,
+                  getCards: () => loadDocs(`${path}/${item.id}/cards`),
+                }) : undefined}
               />
             ))}
           </>
@@ -2889,7 +2994,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
               </Btn>
             </div>
             {cards.map(c => (
-              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} />
+              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={partnerUid ? card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] }) : undefined} />
             ))}
           </div>
         )}
@@ -2898,6 +3003,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
       {renaming     && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const tip = activeTip; setActiveTip(null); if (tip === 'ki-import') setKiImport(true); else if (tip === 'lernen') setLearning(true) }} />}
+      {sendTarget   && <ConfirmSendModal itemName={sendTarget.name} partnerName={partnerName || 'Partner'} onConfirm={async () => { const cs = await sendTarget.getCards(); await sendItemToPartner(partnerUid, uid, user.displayName || user.email, sendTarget.name, cs) }} onClose={() => setSendTarget(null)} />}
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
@@ -2932,7 +3038,9 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
   const [folderPicker, setFolderPicker] = useState(null) // card being moved
   const [exportData,   setExportData]   = useState(null) // { cards, name }
   const [activeTip,    setActiveTip]    = useState(null)
+  const [sendTarget,   setSendTarget]   = useState(null)
   const { dismissed }  = useTips()
+  const { partnerUid, partnerName }     = usePartner()
   const t = useT()
   const uid      = user.uid
   const basePath = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories/${subsub.id}`
@@ -3015,12 +3123,13 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
           </Empty>
         ) : cards.map(c => (
-          <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => remove(c.id)} onMove={card => setFolderPicker(card)} />
+          <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => remove(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={partnerUid ? card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] }) : undefined} />
         ))}
       </div>
 
       {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const tip = activeTip; setActiveTip(null); if (tip === 'ki-import') setKiImport(true); else if (tip === 'lernen') setLearning(true) }} />}
+      {sendTarget   && <ConfirmSendModal itemName={sendTarget.name} partnerName={partnerName || 'Partner'} onConfirm={async () => { const cs = await sendTarget.getCards(); await sendItemToPartner(partnerUid, uid, user.displayName || user.email, sendTarget.name, cs) }} onClose={() => setSendTarget(null)} />}
       {kiImport     && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
@@ -3031,11 +3140,13 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [user,         setUser]         = useState(undefined)
-  const [nav,          setNav]          = useState([{ screen: 'home' }])
-  const [settings,     setSettings]     = useState({ lang: 'de', dailyGoal: 10, defaultMode: 'klassisch' })
-  const [streak,       setStreak]       = useState(0)
-  const [dismissedTips,setDismissedTips]= useState(new Set())
+  const [user,          setUser]          = useState(undefined)
+  const [nav,           setNav]           = useState([{ screen: 'home' }])
+  const [settings,      setSettings]      = useState({ lang: 'de', dailyGoal: 10, defaultMode: 'klassisch' })
+  const [streak,        setStreak]        = useState(0)
+  const [dismissedTips, setDismissedTips] = useState(new Set())
+  const [partnerInfo,   setPartnerInfo]   = useState(null) // { uid, name }
+  const [incomingShares,setIncomingShares]= useState([])   // from sharedFromPartner
 
   useEffect(() => onAuthStateChanged(auth, u => setUser(u || null)), [])
 
@@ -3070,6 +3181,53 @@ export default function App() {
     setDismissedTips(new Set())
     if (!user) return
     await setDoc(doc(db, `users/${user.uid}/settings/dismissedTips`), { keys: [] }).catch(() => {})
+  }
+
+  // Load partner info from profile
+  useEffect(() => {
+    if (!user) return
+    getDoc(doc(db, `users/${user.uid}/profile/main`))
+      .then(snap => {
+        if (snap.exists() && snap.data().partnerUid) {
+          setPartnerInfo({ uid: snap.data().partnerUid, name: snap.data().partnerName || 'Partner' })
+        } else {
+          setPartnerInfo(null)
+        }
+      })
+      .catch(() => {})
+  }, [user?.uid])
+
+  // Listen for incoming shares (sharedFromPartner)
+  useEffect(() => {
+    if (!user) return
+    const unsub = onSnapshot(
+      collection(db, `users/${user.uid}/sharedFromPartner`),
+      snap => setIncomingShares(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      () => {},
+    )
+    return () => unsub()
+  }, [user?.uid])
+
+  const acceptShare = async item => {
+    try {
+      const newCatRef = await addDoc(collection(db, `users/${user.uid}/categories`), {
+        name: item.name, color: 'blue',
+        sharedBy: { uid: item.fromUid, name: item.fromName },
+        createdAt: serverTimestamp(),
+      })
+      if (item.cards?.length > 0) {
+        for (const { id: _id, ...card } of item.cards) {
+          await addDoc(collection(db, `users/${user.uid}/categories/${newCatRef.id}/cards`), {
+            ...card, createdAt: serverTimestamp(),
+          })
+        }
+      }
+      await deleteDoc(doc(db, `users/${user.uid}/sharedFromPartner/${item.id}`))
+    } catch (_) {}
+  }
+
+  const declineShare = async item => {
+    try { await deleteDoc(doc(db, `users/${user.uid}/sharedFromPartner/${item.id}`)) } catch (_) {}
   }
 
   // Load streak + ensure globalStats exists; update streak if new day
@@ -3119,12 +3277,17 @@ export default function App() {
   return (
     <LangContext.Provider value={lang}>
       <TipsContext.Provider value={{ dismissed: dismissedTips, dismiss: dismissTip, resetAll }}>
-        {!user && <LoginScreen />}
-        {user && cur.screen === 'home'     && <HomeScreen user={user} onOpen={cat => push({ screen: 'sub', cat })} onSettings={() => push({ screen: 'settings' })} streak={streak} />}
-        {user && cur.screen === 'sub'      && <SubcategoryScreen user={user} cat={cur.cat} onBack={pop} onNavigate={goTo} onOpen={sub => push({ screen: 'subsub', cat: cur.cat, sub })} />}
-        {user && cur.screen === 'subsub'   && <SubSubcategoryScreen user={user} cat={cur.cat} sub={cur.sub} onBack={pop} onNavigate={goTo} onOpen={subsub => push({ screen: 'cards', cat: cur.cat, sub: cur.sub, subsub })} />}
-        {user && cur.screen === 'cards'    && <CardsScreen user={user} cat={cur.cat} sub={cur.sub} subsub={cur.subsub} onBack={pop} onNavigate={goTo} />}
-        {user && cur.screen === 'settings' && <SettingsScreen user={user} settings={settings} onSave={s => { setSettings(s); pop() }} onBack={pop} />}
+        <PartnerContext.Provider value={{ partnerUid: partnerInfo?.uid || null, partnerName: partnerInfo?.name || null }}>
+          {!user && <LoginScreen />}
+          {user && incomingShares.length > 0 && (
+            <IncomingShareModal item={incomingShares[0]} onAccept={acceptShare} onDecline={declineShare} />
+          )}
+          {user && cur.screen === 'home'     && <HomeScreen user={user} onOpen={cat => push({ screen: 'sub', cat })} onSettings={() => push({ screen: 'settings' })} streak={streak} />}
+          {user && cur.screen === 'sub'      && <SubcategoryScreen user={user} cat={cur.cat} onBack={pop} onNavigate={goTo} onOpen={sub => push({ screen: 'subsub', cat: cur.cat, sub })} />}
+          {user && cur.screen === 'subsub'   && <SubSubcategoryScreen user={user} cat={cur.cat} sub={cur.sub} onBack={pop} onNavigate={goTo} onOpen={subsub => push({ screen: 'cards', cat: cur.cat, sub: cur.sub, subsub })} />}
+          {user && cur.screen === 'cards'    && <CardsScreen user={user} cat={cur.cat} sub={cur.sub} subsub={cur.subsub} onBack={pop} onNavigate={goTo} />}
+          {user && cur.screen === 'settings' && <SettingsScreen user={user} settings={settings} onSave={s => { setSettings(s); pop() }} onBack={pop} />}
+        </PartnerContext.Provider>
       </TipsContext.Provider>
     </LangContext.Provider>
   )
