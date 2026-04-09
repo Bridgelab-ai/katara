@@ -73,6 +73,25 @@ const LANG = {
 const LangContext = createContext(LANG.de)
 const useT = () => useContext(LangContext)
 
+// ─── TIPS CONTEXT ─────────────────────────────────────────────────────────────
+const TipsContext = createContext({ dismissed: new Set(), dismiss: () => {} })
+const useTips = () => useContext(TipsContext)
+
+const TIPS = {
+  'ki-import': {
+    title: '📥 KI-Kartengenerator',
+    body: 'Lade Dateien hoch (Bilder, PDFs, Text) oder gib eine Anweisung — die KI erstellt automatisch Lernkarten. Du kannst alle Karten vor dem Speichern bearbeiten und Ziel-Ordner wählen.',
+  },
+  'lernen': {
+    title: '▶ Lernmodus',
+    body: 'Karte aufdecken, dann ✓ Gewusst oder ✗ Nochmal klicken. KI-Auswahl wählt automatisch die wichtigsten Karten. Falsche Karten erscheinen am Ende mit KI-Merkhilfen.',
+  },
+  'teilen': {
+    title: '🎁 Kartenset teilen',
+    body: 'Deine Karten werden vollständig in die App deines Partners kopiert. Änderungen danach werden nicht synchronisiert — es ist eine einmalige Kopie.',
+  },
+}
+
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 const toBase64 = f => new Promise((res, rej) => {
   const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(f)
@@ -90,6 +109,21 @@ const loadDocs = async (path) => {
     const snap = await getDocs(query(collection(db, path), orderBy('createdAt', 'asc')))
     return snap.docs.map(d => ({ id: d.id, ...d.data() }))
   } catch { return [] }
+}
+// Recursively collect all cards under a Hauptkategorie (for export)
+const collectAllCards = async (uid, catId) => {
+  const base = `users/${uid}/categories/${catId}`
+  const cards = []
+  cards.push(...await loadDocs(`${base}/cards`))
+  const subcats = await loadDocs(`${base}/subcategories`)
+  for (const sub of subcats) {
+    cards.push(...await loadDocs(`${base}/subcategories/${sub.id}/cards`))
+    const subsubs = await loadDocs(`${base}/subcategories/${sub.id}/subsubcategories`)
+    for (const ss of subsubs) {
+      cards.push(...await loadDocs(`${base}/subcategories/${sub.id}/subsubcategories/${ss.id}/cards`))
+    }
+  }
+  return cards
 }
 const countDocs = async (path) => {
   try { const snap = await getDocs(collection(db, path)); return snap.size }
@@ -666,7 +700,7 @@ const SectionLabel = ({ children }) => (
 )
 
 // ─── FOLDER CARD (grid tile — Level 1) ───────────────────────────────────────
-const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove }) => {
+const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExport }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
   const groupCount = item._count ?? 0
@@ -746,8 +780,9 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove }) => {
       >
         <CtxMenu items={[
           { label: t.rename, action: onRename },
-          ...(onMove  ? [{ label: '↗ Verschieben',          action: onMove  }] : []),
-          ...(onShare ? [{ label: '🎁 Mit Partner teilen', action: onShare }] : []),
+          ...(onMove   ? [{ label: '↗ Verschieben',         action: onMove   }] : []),
+          ...(onExport ? [{ label: '📤 Exportieren',        action: onExport }] : []),
+          ...(onShare  ? [{ label: '🎁 Mit Partner teilen', action: onShare  }] : []),
           { label: t.delete, action: onDelete, danger: true },
         ]} />
       </div>
@@ -756,7 +791,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove }) => {
 }
 
 // ─── FOLDER ROW (list — Levels 2 & 3) ────────────────────────────────────────
-const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor, onLearn, onMove }) => {
+const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor, onLearn, onMove, onExport }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
   const color = accentColor || T.acc
@@ -819,7 +854,8 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
         <div style={{ opacity: hov ? 1 : 0, transition: 'opacity 0.15s' }} onClick={e => e.stopPropagation()}>
           <CtxMenu items={[
             { label: t.rename, action: onRename },
-            ...(onMove ? [{ label: '↗ Verschieben', action: onMove }] : []),
+            ...(onMove   ? [{ label: '↗ Verschieben',  action: onMove   }] : []),
+            ...(onExport ? [{ label: '📤 Exportieren', action: onExport }] : []),
             { label: t.delete, action: onDelete, danger: true },
           ]} />
         </div>
@@ -1008,18 +1044,20 @@ const CardModal = ({ initial, onSave, onClose }) => {
 
 // ─── KI IMPORT SCREEN ─────────────────────────────────────────────────────────
 // destinations: [{ label, path }] — if omitted, saves everything to cardsPath
-const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose }) => {
+const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCreateSub }) => {
   const destList = destinations.length > 0 ? destinations : [{ label: 'Hier', path: cardsPath }]
 
-  const [files,     setFiles]     = useState([])
-  const [instr,     setInstr]     = useState('')
-  const [sortInstr, setSortInstr] = useState('')
-  const [dropOver,  setDropOver]  = useState(false)
-  const [loading,   setLoading]   = useState(false)
-  const [preview,   setPreview]   = useState(null) // [{front,back,backShort,_dest}]
-  const [error,     setError]     = useState('')
-  const [saving,    setSaving]    = useState(false)
-  const [dragIdx,   setDragIdx]   = useState(null)
+  const [files,       setFiles]       = useState([])
+  const [instr,       setInstr]       = useState('')
+  const [sortInstr,   setSortInstr]   = useState('')
+  const [dropOver,    setDropOver]    = useState(false)
+  const [loading,     setLoading]     = useState(false)
+  const [preview,     setPreview]     = useState(null) // [{front,back,backShort,_dest}]
+  const [error,       setError]       = useState('')
+  const [saving,      setSaving]      = useState(false)
+  const [dragIdx,     setDragIdx]     = useState(null)
+  const [subSuggestions, setSubSuggestions] = useState([]) // suggested folder names
+  const [subDismissed,   setSubDismissed]   = useState(false)
   const fileRef = useRef(null)
 
   const addFiles = newFiles => {
@@ -1082,6 +1120,22 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose }) => {
       const cards = JSON.parse(match[0])
       if (!Array.isArray(cards) || cards.length === 0) throw new Error('Keine Karten gefunden.')
       setPreview(cards.map(c => ({ ...c, _dest: destList[0].path })))
+      setSubDismissed(false)
+      // Ask KI for subcategory suggestions (fire-and-forget, non-blocking)
+      fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001', max_tokens: 120,
+          messages: [{ role: 'user', content: `Based on these flashcards, suggest 2-3 subcategory names to organize them. Return ONLY a JSON array of strings, no explanation: ${JSON.stringify(cards.slice(0,15).map(c => c.front))}` }],
+        }),
+      }).then(r => r.json()).then(d => {
+        const txt = d.content?.[0]?.text || ''
+        const m = txt.match(/\[[\s\S]*?\]/)
+        if (m) {
+          const names = JSON.parse(m[0]).filter(n => typeof n === 'string' && n.trim())
+          if (names.length > 0) setSubSuggestions(names.slice(0, 3))
+        }
+      }).catch(() => {})
     } catch (e) {
       setError(e.message)
     } finally {
@@ -1249,6 +1303,44 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose }) => {
               <p style={{ fontSize: 12, color: T.textDim, marginBottom: 20 }}>
                 Ziehen zum Sortieren · Bearbeiten · ✕ zum Löschen{destList.length > 1 ? ' · Ziel-Ordner per Dropdown wählen' : ''}
               </p>
+
+              {/* KI subcategory suggestions */}
+              {subSuggestions.length > 0 && !subDismissed && (
+                <div style={{
+                  background: T.accDim, border: `1px solid ${T.acc}44`,
+                  borderRadius: T.r2, padding: '12px 16px', marginBottom: 18,
+                  display: 'flex', alignItems: 'flex-start', gap: 12,
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.acc, marginBottom: 8, letterSpacing: 0.3 }}>
+                      ✦ KI-Vorschlag: Diese Gruppen könnten passen
+                    </div>
+                    <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                      {subSuggestions.map(name => (
+                        <button
+                          key={name}
+                          onClick={() => onCreateSub?.(name)}
+                          disabled={!onCreateSub}
+                          style={{
+                            padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                            background: onCreateSub ? T.acc : T.s4,
+                            color: onCreateSub ? '#fff' : T.textDim,
+                            border: 'none', cursor: onCreateSub ? 'pointer' : 'default',
+                            transition: 'opacity 0.12s',
+                          }}
+                          title={onCreateSub ? `Gruppe "${name}" erstellen` : 'Nur auf Ordner-Ebene verfügbar'}
+                        >+ {name}</button>
+                      ))}
+                    </div>
+                    {!onCreateSub && (
+                      <div style={{ fontSize: 11, color: T.textDim, marginTop: 7 }}>
+                        Gruppen können nur auf Unterkategorie-Ebene erstellt werden.
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => setSubDismissed(true)} style={{ background: 'none', border: 'none', color: T.textDim, cursor: 'pointer', fontSize: 16, padding: '0 2px', flexShrink: 0 }}>✕</button>
+                </div>
+              )}
 
               {preview.map((card, i) => (
                 <div
@@ -1498,6 +1590,93 @@ const MoveFolderModal = ({ uid, mode, excludeId, onPick, onClose }) => {
           ))}
         </div>
       )}
+    </Modal>
+  )
+}
+
+// ─── TIP MODAL ────────────────────────────────────────────────────────────────
+const TipModal = ({ tipKey, onClose }) => {
+  const { dismiss } = useTips()
+  const [dontShow, setDontShow] = useState(false)
+  const tip = TIPS[tipKey]
+  if (!tip) { onClose(); return null }
+  const close = () => { if (dontShow) dismiss(tipKey); onClose() }
+  return (
+    <Modal onClose={close} width={420}>
+      <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 14 }}>{tip.title}</h3>
+      <p style={{ fontSize: 14, color: T.textSub, lineHeight: 1.65, marginBottom: 22 }}>{tip.body}</p>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 20 }}>
+        <input
+          type="checkbox" checked={dontShow} onChange={e => setDontShow(e.target.checked)}
+          style={{ width: 15, height: 15, accentColor: T.acc, cursor: 'pointer' }}
+        />
+        <span style={{ fontSize: 13, color: T.textDim }}>Nicht mehr anzeigen</span>
+      </label>
+      <Btn onClick={close} full>Verstanden</Btn>
+    </Modal>
+  )
+}
+
+// ─── EXPORT MODAL ─────────────────────────────────────────────────────────────
+const ExportModal = ({ cards, folderName, onClose }) => {
+  const exportCSV = () => {
+    const rows = cards.map(c =>
+      ['front','back','backShort'].map(k => `"${(c[k] || '').replace(/"/g,'""')}"`).join(',')
+    )
+    const csv = 'Vorderseite,Rückseite,Kürzel\n' + rows.join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `${folderName || 'karten'}.csv`; a.click()
+    URL.revokeObjectURL(url)
+    onClose()
+  }
+  const exportPDF = () => {
+    const win = window.open('', '_blank')
+    if (!win) return
+    const rows = cards.map(c => `<tr>
+      <td style="padding:10px 14px;border-bottom:1px solid #e0e0e0;font-weight:600;vertical-align:top">${c.front || ''}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #e0e0e0;vertical-align:top">${c.back || ''}${c.backShort ? `<br><span style="font-size:12px;color:#888">${c.backShort}</span>` : ''}</td>
+    </tr>`).join('')
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${folderName}</title>
+      <style>body{font-family:system-ui,sans-serif;padding:28px;color:#111}h1{font-size:20px;margin-bottom:4px}
+      p{color:#888;font-size:13px;margin-bottom:16px}table{width:100%;border-collapse:collapse}
+      th{background:#f5f5f5;padding:10px 14px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+      button{margin-bottom:18px;padding:8px 18px;cursor:pointer;border:1px solid #ccc;border-radius:6px;font-size:14px}
+      @media print{button{display:none}}</style></head><body>
+      <h1>📚 ${folderName}</h1>
+      <p>${cards.length} Karten · ${new Date().toLocaleDateString('de-DE')}</p>
+      <button onclick="window.print()">🖨️ Drucken / Als PDF speichern</button>
+      <table><tr><th>Vorderseite</th><th>Rückseite</th></tr>${rows}</table>
+      </body></html>`)
+    win.document.close()
+    onClose()
+  }
+  return (
+    <Modal onClose={onClose} width={360}>
+      <h3 style={{ fontSize: 16, fontWeight: 700, color: T.text, marginBottom: 6 }}>📤 Exportieren</h3>
+      <p style={{ fontSize: 13, color: T.textDim, marginBottom: 20 }}>{cards.length} Karten aus „{folderName}"</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {[
+          { icon: '📊', label: 'CSV', sub: 'Excel-kompatibel · Vorderseite, Rückseite, Kürzel', fn: exportCSV },
+          { icon: '🖨️', label: 'Als PDF drucken', sub: 'Formatierte Kartenliste im neuen Tab öffnen', fn: exportPDF },
+        ].map(({ icon, label, sub, fn }) => (
+          <button key={label} onClick={fn} style={{
+            display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left',
+            padding: '14px 16px', background: T.s3, border: `1px solid ${T.border}`,
+            borderRadius: T.r2, cursor: 'pointer', transition: 'border-color 0.12s', width: '100%',
+          }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = T.acc}
+          onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
+          >
+            <span style={{ fontSize: 24, flexShrink: 0 }}>{icon}</span>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{label}</div>
+              <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>{sub}</div>
+            </div>
+          </button>
+        ))}
+      </div>
     </Modal>
   )
 }
@@ -1998,11 +2177,13 @@ const Empty = ({ icon, title, sub, children }) => (
 // ─── SETTINGS SCREEN ─────────────────────────────────────────────────────────
 const SettingsScreen = ({ user, settings, onSave, onBack }) => {
   const t = useT()
+  const { dismiss, resetAll } = useTips()
   const [lang,        setLang]        = useState(settings.lang        || 'de')
   const [dailyGoal,   setDailyGoal]   = useState(settings.dailyGoal   || 10)
   const [defaultMode, setDefaultMode] = useState(settings.defaultMode || 'klassisch')
   const [saving,      setSaving]      = useState(false)
   const [saved,       setSaved]       = useState(false)
+  const [tipsReset,   setTipsReset]   = useState(false)
 
   const save = async () => {
     setSaving(true)
@@ -2079,6 +2260,19 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
           </Btn>
         </SectionCard>
 
+        <SectionCard label="Hilfe & Tipps">
+          <div style={{ fontSize: 13, color: T.textSub, marginBottom: 14, lineHeight: 1.6 }}>
+            Einführungs-Tipps für KI-Import, Lernmodus und Teilen werden beim nächsten Verwenden wieder angezeigt.
+          </div>
+          <Btn
+            onClick={async () => { await resetAll(); setTipsReset(true); setTimeout(() => setTipsReset(false), 2000) }}
+            variant="secondary"
+            style={{ padding: '8px 16px', fontSize: 13 }}
+          >
+            {tipsReset ? '✓ Tipps zurückgesetzt' : '🔄 Alle Tipps zurücksetzen'}
+          </Btn>
+        </SectionCard>
+
         <Btn onClick={save} disabled={saving} full style={{ padding: '14px', fontSize: 15 }}>
           {saved ? `✓ ${t.saved}` : saving ? t.saving : t.saveChanges}
         </Btn>
@@ -2148,7 +2342,7 @@ const LoginScreen = () => {
 }
 
 // ─── HOME SCREEN (Level 1: Hauptkategorien) ───────────────────────────────────
-const HomeScreen = ({ user, onOpen, onSettings }) => {
+const HomeScreen = ({ user, onOpen, onSettings, streak = 0 }) => {
   const [items,       setItems]       = useState([])
   const [loading,     setLoading]     = useState(true)
   const [modal,       setModal]       = useState(false)
@@ -2159,6 +2353,9 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
   const [sharing,     setSharing]     = useState(false)
   const [movingCat,   setMovingCat]   = useState(null) // item being moved
   const [moving,      setMoving]      = useState(false)
+  const [exportData,  setExportData]  = useState(null) // { cards, name }
+  const [activeTip,   setActiveTip]   = useState(null)
+  const { dismissed, dismiss }        = useTips()
   const t    = useT()
   const uid  = user.uid
   const path = `users/${uid}/categories`
@@ -2280,12 +2477,21 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
             <Btn onClick={() => signOut(auth)} variant="secondary" style={{ padding: '5px 12px', fontSize: 12 }}>{t.signOut}</Btn>
           </div>
         </div>
-        {/* Row 2: Title + New Category */}
+        {/* Row 2: Title + streak + New Category */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '9px 28px',
         }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{t.home}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{t.home}</span>
+            {streak > 0 && (
+              <span style={{
+                fontSize: 12, fontWeight: 700, color: T.amber,
+                background: `${T.amber}18`, borderRadius: 20,
+                padding: '3px 10px', letterSpacing: 0.2,
+              }}>🔥 {streak} {streak === 1 ? 'Tag' : 'Tage'}</span>
+            )}
+          </div>
           <Btn onClick={() => setModal(true)} style={{ padding: '7px 16px', fontSize: 13 }}>
             {t.newCategory}
           </Btn>
@@ -2366,8 +2572,15 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
                 onClick={() => onOpen(item)}
                 onRename={() => setRenaming(item)}
                 onDelete={() => remove(item.id)}
-                onShare={partnerInfo ? () => setShareTarget(item) : undefined}
                 onMove={() => setMovingCat(item)}
+                onExport={async () => {
+                  const cs = await collectAllCards(uid, item.id)
+                  setExportData({ cards: cs, name: item.name })
+                }}
+                onShare={partnerInfo ? () => {
+                  if (!dismissed.has('teilen')) { setActiveTip('teilen'); setShareTarget(item) }
+                  else setShareTarget(item)
+                } : undefined}
               />
             ))}
           </div>
@@ -2376,7 +2589,9 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
 
       {modal       && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
       {renaming    && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
-      {shareTarget && <ShareModal catName={shareTarget.name} partnerName={partnerInfo?.name || 'Partner'} sharing={sharing} onConfirm={shareWithPartner} onClose={() => setShareTarget(null)} />}
+      {shareTarget && activeTip === 'teilen' && <TipModal tipKey="teilen" onClose={() => setActiveTip(null)} />}
+      {shareTarget && activeTip !== 'teilen' && <ShareModal catName={shareTarget.name} partnerName={partnerInfo?.name || 'Partner'} sharing={sharing} onConfirm={shareWithPartner} onClose={() => setShareTarget(null)} />}
+      {exportData  && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
       {movingCat   && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={movingCat.id} onPick={handleCatMove} onClose={() => setMovingCat(null)} />}
       {moving      && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -2400,6 +2615,9 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
   const [folderPicker, setFolderPicker] = useState(null) // card being moved
   const [movingSub,    setMovingSub]    = useState(null) // subcat being moved
   const [moving,       setMoving]       = useState(false)
+  const [exportData,   setExportData]   = useState(null) // { cards, name }
+  const [activeTip,    setActiveTip]    = useState(null)
+  const { dismissed }  = useTips()
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories`
@@ -2460,7 +2678,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
         onNavigate={onNavigate}
         right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>{t.kiCreate}</Btn>
+            <Btn onClick={() => { if (!dismissed.has('ki-import')) setActiveTip('ki-import'); else setKiImport(true) }} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>{t.kiCreate}</Btn>
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '7px 12px', fontSize: 13 }}>{t.addCard}</Btn>
             <Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>{t.newGroup}</Btn>
           </div>
@@ -2469,7 +2687,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 24px' }}>
         {items.length === 0 && cards.length === 0 && (
           <Empty icon="🗂️" title={t.emptyCards} sub={t.emptyCardsSub}>
-            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '8px 14px', fontSize: 13 }}>{t.kiCreate}</Btn>
+            <Btn onClick={() => { if (!dismissed.has('ki-import')) setActiveTip('ki-import'); else setKiImport(true) }} variant="ghost" style={{ padding: '8px 14px', fontSize: 13 }}>{t.kiCreate}</Btn>
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
           </Empty>
         )}
@@ -2485,7 +2703,12 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
                 onRename={() => setRenaming(item)}
                 onDelete={() => remove(item.id)}
                 onMove={() => setMovingSub(item)}
+                onExport={async () => {
+                  const cs = await loadDocs(`${path}/${item.id}/cards`)
+                  setExportData({ cards: cs, name: item.name })
+                }}
                 onLearn={async () => {
+                  if (!dismissed.has('lernen')) { setActiveTip('lernen'); return }
                   const p = `${path}/${item.id}/cards`
                   const cs = await loadDocs(p)
                   if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p })
@@ -2501,7 +2724,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
               <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase' }}>
                 {t.cards} ({cards.length})
               </div>
-              <Btn onClick={() => setLearning(true)} variant="success" style={{ padding: '7px 18px', fontSize: 13 }}>
+              <Btn onClick={() => { if (!dismissed.has('lernen')) setActiveTip('lernen'); else setLearning(true) }} variant="success" style={{ padding: '7px 18px', fontSize: 13 }}>
                 {t.learn}
               </Btn>
             </div>
@@ -2514,10 +2737,12 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
       {modal        && <CreateModal title={t.newGroup.replace('+ ','')} placeholder="z.B. Hauptsignale" onSave={create} onClose={() => setModal(false)} />}
       {renaming     && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const t = activeTip; setActiveTip(null); if (t === 'ki-import') setKiImport(true); else if (t === 'lernen') setLearning(true) }} />}
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
       {movingSub    && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={cat.id} onPick={handleSubMove} onClose={() => setMovingSub(null)} />}
+      {exportData   && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
       {moving       && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ color: T.textSub, fontSize: 14 }}>Wird verschoben…</div>
@@ -2551,6 +2776,9 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
   const [folderPicker, setFolderPicker] = useState(null) // card being moved
   const [movingSs,     setMovingSs]     = useState(null) // subsubcat being moved
   const [moving,       setMoving]       = useState(false)
+  const [exportData,   setExportData]   = useState(null) // { cards, name }
+  const [activeTip,    setActiveTip]    = useState(null)
+  const { dismissed }  = useTips()
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories`
@@ -2611,7 +2839,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
         onNavigate={onNavigate}
         right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>{t.kiCreate}</Btn>
+            <Btn onClick={() => { if (!dismissed.has('ki-import')) setActiveTip('ki-import'); else setKiImport(true) }} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>{t.kiCreate}</Btn>
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '7px 12px', fontSize: 13 }}>{t.addCard}</Btn>
             <Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>{t.newSubgroup}</Btn>
           </div>
@@ -2620,7 +2848,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 24px' }}>
         {items.length === 0 && cards.length === 0 && (
           <Empty icon="📂" title={t.emptyCards} sub={t.emptyCardsSub}>
-            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '8px 14px', fontSize: 13 }}>{t.kiCreate}</Btn>
+            <Btn onClick={() => { if (!dismissed.has('ki-import')) setActiveTip('ki-import'); else setKiImport(true) }} variant="ghost" style={{ padding: '8px 14px', fontSize: 13 }}>{t.kiCreate}</Btn>
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
           </Empty>
         )}
@@ -2636,7 +2864,12 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
                 onRename={() => setRenaming(item)}
                 onDelete={() => remove(item.id)}
                 onMove={() => setMovingSs(item)}
+                onExport={async () => {
+                  const cs = await loadDocs(`${path}/${item.id}/cards`)
+                  setExportData({ cards: cs, name: item.name })
+                }}
                 onLearn={item._count > 0 ? async () => {
+                  if (!dismissed.has('lernen')) { setActiveTip('lernen'); return }
                   const p = `${path}/${item.id}/cards`
                   const cs = await loadDocs(p)
                   if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p })
@@ -2651,7 +2884,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
               <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase' }}>
                 {t.cards} ({cards.length})
               </div>
-              <Btn onClick={() => setLearning(true)} variant="success" style={{ padding: '7px 18px', fontSize: 13 }}>
+              <Btn onClick={() => { if (!dismissed.has('lernen')) setActiveTip('lernen'); else setLearning(true) }} variant="success" style={{ padding: '7px 18px', fontSize: 13 }}>
                 {t.learn}
               </Btn>
             </div>
@@ -2664,10 +2897,12 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
       {modal        && <CreateModal title={t.newSubgroup.replace('+ ','')} placeholder="z.B. Hp-Begriffe" onSave={create} onClose={() => setModal(false)} />}
       {renaming     && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const tip = activeTip; setActiveTip(null); if (tip === 'ki-import') setKiImport(true); else if (tip === 'lernen') setLearning(true) }} />}
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
       {movingSs     && <MoveFolderModal uid={uid} mode="pick-subcat" excludeId={sub.id} onPick={handleSsMove} onClose={() => setMovingSs(null)} />}
+      {exportData   && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
       {moving       && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ color: T.textSub, fontSize: 14 }}>Wird verschoben…</div>
@@ -2695,6 +2930,9 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
   const [kiImport,     setKiImport]     = useState(false)
   const [learning,     setLearning]     = useState(false)
   const [folderPicker, setFolderPicker] = useState(null) // card being moved
+  const [exportData,   setExportData]   = useState(null) // { cards, name }
+  const [activeTip,    setActiveTip]    = useState(null)
+  const { dismissed }  = useTips()
   const t = useT()
   const uid      = user.uid
   const basePath = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories/${subsub.id}`
@@ -2737,12 +2975,17 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
           <Btn onClick={() => setCardModal('new')} style={{ padding: '9px 16px' }}>
             {t.addCard}
           </Btn>
-          <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '9px 16px' }}>
+          <Btn onClick={() => { if (!dismissed.has('ki-import')) setActiveTip('ki-import'); else setKiImport(true) }} variant="ghost" style={{ padding: '9px 16px' }}>
             {t.kiGenerate}
           </Btn>
+          {cards.length > 0 && (
+            <Btn onClick={() => setExportData({ cards, name: subsub.name })} variant="secondary" style={{ padding: '9px 14px', fontSize: 13 }}>
+              📤
+            </Btn>
+          )}
           <div style={{ flex: 1 }} />
           <Btn
-            onClick={() => setLearning(true)}
+            onClick={() => { if (!dismissed.has('lernen')) setActiveTip('lernen'); else setLearning(true) }}
             variant="success"
             disabled={cards.length === 0}
             style={{ padding: '9px 22px' }}
@@ -2768,7 +3011,7 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
         {/* Card list */}
         {cards.length === 0 ? (
           <Empty icon="🃏" title={t.emptyCards} sub={t.emptyCardsSub}>
-            <Btn onClick={() => setKiImport(true)} variant="ghost" style={{ padding: '8px 14px', fontSize: 13 }}>{t.kiGenerate}</Btn>
+            <Btn onClick={() => { if (!dismissed.has('ki-import')) setActiveTip('ki-import'); else setKiImport(true) }} variant="ghost" style={{ padding: '8px 14px', fontSize: 13 }}>{t.kiGenerate}</Btn>
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
           </Empty>
         ) : cards.map(c => (
@@ -2777,18 +3020,22 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
       </div>
 
       {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const tip = activeTip; setActiveTip(null); if (tip === 'ki-import') setKiImport(true); else if (tip === 'lernen') setLearning(true) }} />}
       {kiImport     && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
+      {exportData   && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
     </div>
   )
 }
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [user,     setUser]     = useState(undefined)
-  const [nav,      setNav]      = useState([{ screen: 'home' }])
-  const [settings, setSettings] = useState({ lang: 'de', dailyGoal: 10, defaultMode: 'klassisch' })
+  const [user,         setUser]         = useState(undefined)
+  const [nav,          setNav]          = useState([{ screen: 'home' }])
+  const [settings,     setSettings]     = useState({ lang: 'de', dailyGoal: 10, defaultMode: 'klassisch' })
+  const [streak,       setStreak]       = useState(0)
+  const [dismissedTips,setDismissedTips]= useState(new Set())
 
   useEffect(() => onAuthStateChanged(auth, u => setUser(u || null)), [])
 
@@ -2800,17 +3047,57 @@ export default function App() {
       .catch(() => {})
   }, [user?.uid])
 
-  // Ensure globalStats document exists (never overwrite — only create if missing)
+  // Load dismissed tips from Firestore
+  useEffect(() => {
+    if (!user) return
+    getDoc(doc(db, `users/${user.uid}/settings/dismissedTips`))
+      .then(snap => { if (snap.exists()) setDismissedTips(new Set(snap.data().keys || [])) })
+      .catch(() => {})
+  }, [user?.uid])
+
+  const dismissTip = async key => {
+    setDismissedTips(prev => { const next = new Set(prev); next.add(key); return next })
+    if (!user) return
+    const ref = doc(db, `users/${user.uid}/settings/dismissedTips`)
+    try {
+      const snap = await getDoc(ref)
+      const keys = snap.exists() ? (snap.data().keys || []) : []
+      if (!keys.includes(key)) await setDoc(ref, { keys: [...keys, key] })
+    } catch (_) {}
+  }
+
+  const resetAll = async () => {
+    setDismissedTips(new Set())
+    if (!user) return
+    await setDoc(doc(db, `users/${user.uid}/settings/dismissedTips`), { keys: [] }).catch(() => {})
+  }
+
+  // Load streak + ensure globalStats exists; update streak if new day
   useEffect(() => {
     if (!user) return
     const ref = doc(db, `users/${user.uid}/globalStats/main`)
     getDoc(ref).then(snap => {
+      const now = Date.now()
+      const today = new Date().toDateString()
       if (!snap.exists()) {
         setDoc(ref, {
-          streakDays: 0, totalCards: 0,
+          streakDays: 1, totalCards: 0,
           weeklyMinutes: 0, monthlyMinutes: 0, yearlyMinutes: 0, totalMinutes: 0,
-          lastActive: Date.now(),
+          lastActive: now,
         }).catch(() => {})
+        setStreak(1)
+      } else {
+        const data = snap.data()
+        const lastDay = new Date(data.lastActive || 0).toDateString()
+        const streakDays = data.streakDays || 0
+        if (lastDay === today) {
+          setStreak(streakDays)
+        } else {
+          const yesterday = new Date(now - 86400000).toDateString()
+          const newStreak = lastDay === yesterday ? streakDays + 1 : 1
+          setStreak(newStreak)
+          updateDoc(ref, { lastActive: now, streakDays: newStreak }).catch(() => {})
+        }
       }
     }).catch(() => {})
   }, [user?.uid])
@@ -2831,12 +3118,14 @@ export default function App() {
 
   return (
     <LangContext.Provider value={lang}>
-      {!user && <LoginScreen />}
-      {user && cur.screen === 'home'     && <HomeScreen user={user} onOpen={cat => push({ screen: 'sub', cat })} onSettings={() => push({ screen: 'settings' })} />}
-      {user && cur.screen === 'sub'      && <SubcategoryScreen user={user} cat={cur.cat} onBack={pop} onNavigate={goTo} onOpen={sub => push({ screen: 'subsub', cat: cur.cat, sub })} />}
-      {user && cur.screen === 'subsub'   && <SubSubcategoryScreen user={user} cat={cur.cat} sub={cur.sub} onBack={pop} onNavigate={goTo} onOpen={subsub => push({ screen: 'cards', cat: cur.cat, sub: cur.sub, subsub })} />}
-      {user && cur.screen === 'cards'    && <CardsScreen user={user} cat={cur.cat} sub={cur.sub} subsub={cur.subsub} onBack={pop} onNavigate={goTo} />}
-      {user && cur.screen === 'settings' && <SettingsScreen user={user} settings={settings} onSave={s => { setSettings(s); pop() }} onBack={pop} />}
+      <TipsContext.Provider value={{ dismissed: dismissedTips, dismiss: dismissTip, resetAll }}>
+        {!user && <LoginScreen />}
+        {user && cur.screen === 'home'     && <HomeScreen user={user} onOpen={cat => push({ screen: 'sub', cat })} onSettings={() => push({ screen: 'settings' })} streak={streak} />}
+        {user && cur.screen === 'sub'      && <SubcategoryScreen user={user} cat={cur.cat} onBack={pop} onNavigate={goTo} onOpen={sub => push({ screen: 'subsub', cat: cur.cat, sub })} />}
+        {user && cur.screen === 'subsub'   && <SubSubcategoryScreen user={user} cat={cur.cat} sub={cur.sub} onBack={pop} onNavigate={goTo} onOpen={subsub => push({ screen: 'cards', cat: cur.cat, sub: cur.sub, subsub })} />}
+        {user && cur.screen === 'cards'    && <CardsScreen user={user} cat={cur.cat} sub={cur.sub} subsub={cur.subsub} onBack={pop} onNavigate={goTo} />}
+        {user && cur.screen === 'settings' && <SettingsScreen user={user} settings={settings} onSave={s => { setSettings(s); pop() }} onBack={pop} />}
+      </TipsContext.Provider>
     </LangContext.Provider>
   )
 }
