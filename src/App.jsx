@@ -160,6 +160,66 @@ const updateGlobalStats = async (uid, cardsAnswered, durationMinutes) => {
   } catch (_) {}
 }
 
+// ─── FOLDER MOVE UTILITIES ───────────────────────────────────────────────────
+// Move a Hauptkategorie to become a subcategory of another Hauptkategorie.
+// Its subcategories become subsubcategories (1-level shift; the 3-level limit
+// means the original subsubcategories cannot be preserved — they are dropped).
+const moveCatAsSubcat = async (uid, srcCatId, dstCatId) => {
+  const srcBase = `users/${uid}/categories/${srcCatId}`
+  const srcSnap = await getDoc(doc(db, srcBase))
+  if (!srcSnap.exists()) return
+  const { id: _id, ...srcData } = { id: srcCatId, ...srcSnap.data() }
+  const newRef = await addDoc(
+    collection(db, `users/${uid}/categories/${dstCatId}/subcategories`),
+    { name: srcData.name, createdAt: serverTimestamp() },
+  )
+  const dstBase = `users/${uid}/categories/${dstCatId}/subcategories/${newRef.id}`
+  const cards = await loadDocs(`${srcBase}/cards`)
+  for (const c of cards) { const { id: _, ...d } = c; await addDoc(collection(db, `${dstBase}/cards`), d); await deleteDoc(doc(db, `${srcBase}/cards/${c.id}`)) }
+  const subcats = await loadDocs(`${srcBase}/subcategories`)
+  for (const sub of subcats) {
+    const { id: subId, ...subData } = sub
+    const newSubRef = await addDoc(collection(db, `${dstBase}/subsubcategories`), { name: subData.name, createdAt: serverTimestamp() })
+    const subCards = await loadDocs(`${srcBase}/subcategories/${subId}/cards`)
+    for (const c of subCards) { const { id: _, ...d } = c; await addDoc(collection(db, `${dstBase}/subsubcategories/${newSubRef.id}/cards`), d); await deleteDoc(doc(db, `${srcBase}/subcategories/${subId}/cards/${c.id}`)) }
+    await deleteDoc(doc(db, `${srcBase}/subcategories/${subId}`))
+  }
+  await deleteDoc(doc(db, srcBase))
+}
+
+// Move a subcategory (with all its subsubcategories and cards) to a different
+// Hauptkategorie.
+const moveSubcatToCat = async (uid, srcCatId, srcSubId, dstCatId) => {
+  const srcBase = `users/${uid}/categories/${srcCatId}/subcategories/${srcSubId}`
+  const srcSnap = await getDoc(doc(db, srcBase))
+  if (!srcSnap.exists()) return
+  const newRef = await addDoc(collection(db, `users/${uid}/categories/${dstCatId}/subcategories`), srcSnap.data())
+  const dstBase = `users/${uid}/categories/${dstCatId}/subcategories/${newRef.id}`
+  const cards = await loadDocs(`${srcBase}/cards`)
+  for (const c of cards) { const { id: _, ...d } = c; await addDoc(collection(db, `${dstBase}/cards`), d); await deleteDoc(doc(db, `${srcBase}/cards/${c.id}`)) }
+  const subsubs = await loadDocs(`${srcBase}/subsubcategories`)
+  for (const ss of subsubs) {
+    const { id: ssId, ...ssData } = ss
+    const newSsRef = await addDoc(collection(db, `${dstBase}/subsubcategories`), ssData)
+    const ssCards = await loadDocs(`${srcBase}/subsubcategories/${ssId}/cards`)
+    for (const c of ssCards) { const { id: _, ...d } = c; await addDoc(collection(db, `${dstBase}/subsubcategories/${newSsRef.id}/cards`), d); await deleteDoc(doc(db, `${srcBase}/subsubcategories/${ssId}/cards/${c.id}`)) }
+    await deleteDoc(doc(db, `${srcBase}/subsubcategories/${ssId}`))
+  }
+  await deleteDoc(doc(db, srcBase))
+}
+
+// Move a subsubcategory (with its cards) to a different subcategory.
+const moveSubsubcatToSub = async (uid, srcCatId, srcSubId, srcSsId, dstCatId, dstSubId) => {
+  const srcBase = `users/${uid}/categories/${srcCatId}/subcategories/${srcSubId}/subsubcategories/${srcSsId}`
+  const srcSnap = await getDoc(doc(db, srcBase))
+  if (!srcSnap.exists()) return
+  const newRef = await addDoc(collection(db, `users/${uid}/categories/${dstCatId}/subcategories/${dstSubId}/subsubcategories`), srcSnap.data())
+  const dstBase = `users/${uid}/categories/${dstCatId}/subcategories/${dstSubId}/subsubcategories/${newRef.id}`
+  const cards = await loadDocs(`${srcBase}/cards`)
+  for (const c of cards) { const { id: _, ...d } = c; await addDoc(collection(db, `${dstBase}/cards`), d); await deleteDoc(doc(db, `${srcBase}/cards/${c.id}`)) }
+  await deleteDoc(doc(db, srcBase))
+}
+
 // ─── CATEGORY COLORS ─────────────────────────────────────────────────────────
 const CAT_COLORS = [
   { id: 'blue',   hex: '#4F8EF7' },
@@ -606,7 +666,7 @@ const SectionLabel = ({ children }) => (
 )
 
 // ─── FOLDER CARD (grid tile — Level 1) ───────────────────────────────────────
-const FolderCard = ({ item, onClick, onRename, onDelete, onShare }) => {
+const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
   const groupCount = item._count ?? 0
@@ -686,6 +746,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare }) => {
       >
         <CtxMenu items={[
           { label: t.rename, action: onRename },
+          ...(onMove  ? [{ label: '↗ Verschieben',          action: onMove  }] : []),
           ...(onShare ? [{ label: '🎁 Mit Partner teilen', action: onShare }] : []),
           { label: t.delete, action: onDelete, danger: true },
         ]} />
@@ -695,7 +756,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare }) => {
 }
 
 // ─── FOLDER ROW (list — Levels 2 & 3) ────────────────────────────────────────
-const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor, onLearn }) => {
+const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor, onLearn, onMove }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
   const color = accentColor || T.acc
@@ -758,6 +819,7 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
         <div style={{ opacity: hov ? 1 : 0, transition: 'opacity 0.15s' }} onClick={e => e.stopPropagation()}>
           <CtxMenu items={[
             { label: t.rename, action: onRename },
+            ...(onMove ? [{ label: '↗ Verschieben', action: onMove }] : []),
             { label: t.delete, action: onDelete, danger: true },
           ]} />
         </div>
@@ -817,15 +879,6 @@ const CardItem = ({ card, onEdit, onDelete, onMove }) => {
       {/* Mastery + actions — always visible */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         {m > 0 && <Badge color={mColor}>{['','✗','✓','★'][m] || m}</Badge>}
-        {onMove && (
-          <button
-            onClick={e => { e.stopPropagation(); onMove(card) }}
-            title="Verschieben"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textDim, fontSize: 13, padding: '4px 6px', borderRadius: 5, transition: 'color 0.12s' }}
-            onMouseEnter={e => e.currentTarget.style.color = T.amber}
-            onMouseLeave={e => e.currentTarget.style.color = T.textDim}
-          >↗</button>
-        )}
         <button
           onClick={e => { e.stopPropagation(); onEdit() }}
           title="Bearbeiten"
@@ -840,6 +893,11 @@ const CardItem = ({ card, onEdit, onDelete, onMove }) => {
           onMouseEnter={e => e.currentTarget.style.color = T.red}
           onMouseLeave={e => e.currentTarget.style.color = T.textDim}
         >🗑</button>
+        {onMove && (
+          <div onClick={e => e.stopPropagation()}>
+            <CtxMenu items={[{ label: '↗ Verschieben', action: () => onMove(card) }]} />
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1354,6 +1412,93 @@ const PhoneticHint = ({ text }) => {
           : null
       }
     </div>
+  )
+}
+
+// ─── MOVE FOLDER MODAL ───────────────────────────────────────────────────────
+// mode='pick-cat'    → user picks a Hauptkategorie (for subcat move or cat→subcat)
+// mode='pick-subcat' → user picks a Hauptkategorie + Unterkategorie (for subsubcat move)
+const MoveFolderModal = ({ uid, mode, excludeId, onPick, onClose }) => {
+  const [cats,     setCats]     = useState([])
+  const [subcats,  setSubcats]  = useState({}) // catId → subs[]
+  const [expanded, setExpanded] = useState({})
+  const [loading,  setLoading]  = useState(true)
+
+  useEffect(() => {
+    loadDocs(`users/${uid}/categories`).then(cs => {
+      setCats(cs.filter(c => c.id !== excludeId))
+      setLoading(false)
+    })
+  }, [uid, excludeId])
+
+  const toggleSubs = async catId => {
+    if (subcats[catId]) {
+      setExpanded(e => ({ ...e, [catId]: !e[catId] }))
+    } else {
+      const subs = await loadDocs(`users/${uid}/categories/${catId}/subcategories`)
+      setSubcats(s => ({ ...s, [catId]: subs.filter(s => s.id !== excludeId) }))
+      setExpanded(e => ({ ...e, [catId]: true }))
+    }
+  }
+
+  const PickRow = ({ label, indent = 0, onClick }) => {
+    const [hov, setHov] = useState(false)
+    return (
+      <button
+        onClick={onClick}
+        onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+        style={{
+          display: 'block', width: '100%', textAlign: 'left',
+          padding: `8px 12px 8px ${12 + indent * 18}px`,
+          background: hov ? T.s3 : 'none', border: 'none',
+          borderRadius: T.r, color: T.text, fontSize: 13,
+          cursor: 'pointer', transition: 'background 0.1s',
+        }}
+      >{label}</button>
+    )
+  }
+
+  return (
+    <Modal onClose={onClose} width={380}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Verschieben nach…</h3>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.textDim, cursor: 'pointer', fontSize: 18 }}>✕</button>
+      </div>
+      {loading ? (
+        <div style={{ color: T.textDim, fontSize: 13, padding: '12px 0' }}>Lädt…</div>
+      ) : cats.length === 0 ? (
+        <div style={{ color: T.textDim, fontSize: 13, padding: '12px 0' }}>Keine anderen Kategorien verfügbar.</div>
+      ) : (
+        <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+          {cats.map(cat => (
+            <div key={cat.id}>
+              {mode === 'pick-cat' ? (
+                <PickRow label={`📁 ${cat.name}`} onClick={() => onPick({ catId: cat.id })} />
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span style={{ flex: 1, color: T.textDim, fontSize: 13, padding: '8px 12px', userSelect: 'none' }}>📁 {cat.name}</span>
+                    <button
+                      onClick={() => toggleSubs(cat.id)}
+                      style={{ background: 'none', border: 'none', color: T.textDim, cursor: 'pointer', padding: '4px 10px', fontSize: 11, transition: 'color 0.1s' }}
+                      onMouseEnter={e => e.currentTarget.style.color = T.acc}
+                      onMouseLeave={e => e.currentTarget.style.color = T.textDim}
+                    >{expanded[cat.id] ? '▲' : '▼'}</button>
+                  </div>
+                  {expanded[cat.id] && (
+                    subcats[cat.id]?.length === 0
+                      ? <div style={{ paddingLeft: 30, fontSize: 12, color: T.textDim, paddingBottom: 6 }}>Keine Gruppen</div>
+                      : subcats[cat.id]?.map(sub => (
+                          <PickRow key={sub.id} label={`📂 ${sub.name}`} indent={1} onClick={() => onPick({ catId: cat.id, subId: sub.id })} />
+                        ))
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
   )
 }
 
@@ -2012,6 +2157,8 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
   const [partnerInfo, setPartnerInfo] = useState(null) // { uid, name }
   const [shareTarget, setShareTarget] = useState(null) // item being shared
   const [sharing,     setSharing]     = useState(false)
+  const [movingCat,   setMovingCat]   = useState(null) // item being moved
+  const [moving,      setMoving]      = useState(false)
   const t    = useT()
   const uid  = user.uid
   const path = `users/${uid}/categories`
@@ -2089,6 +2236,13 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
       }
     } catch (e) { console.error('[Katara] shareWithPartner failed:', e) }
     setSharing(false); setShareTarget(null)
+  }
+
+  const handleCatMove = async ({ catId: dstCatId }) => {
+    if (!movingCat || dstCatId === movingCat.id) { setMovingCat(null); return }
+    setMoving(true); setMovingCat(null)
+    await moveCatAsSubcat(uid, movingCat.id, dstCatId)
+    setMoving(false); load()
   }
 
   const filtered = search.trim()
@@ -2213,6 +2367,7 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
                 onRename={() => setRenaming(item)}
                 onDelete={() => remove(item.id)}
                 onShare={partnerInfo ? () => setShareTarget(item) : undefined}
+                onMove={() => setMovingCat(item)}
               />
             ))}
           </div>
@@ -2222,6 +2377,12 @@ const HomeScreen = ({ user, onOpen, onSettings }) => {
       {modal       && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
       {renaming    && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {shareTarget && <ShareModal catName={shareTarget.name} partnerName={partnerInfo?.name || 'Partner'} sharing={sharing} onConfirm={shareWithPartner} onClose={() => setShareTarget(null)} />}
+      {movingCat   && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={movingCat.id} onPick={handleCatMove} onClose={() => setMovingCat(null)} />}
+      {moving      && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ color: T.textSub, fontSize: 14 }}>Wird verschoben…</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2237,6 +2398,8 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
   const [learning,     setLearning]     = useState(false)
   const [rowLearn,     setRowLearn]     = useState(null) // { cards, cardsPath }
   const [folderPicker, setFolderPicker] = useState(null) // card being moved
+  const [movingSub,    setMovingSub]    = useState(null) // subcat being moved
+  const [moving,       setMoving]       = useState(false)
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories`
@@ -2282,6 +2445,12 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
     await deleteDoc(doc(db, `${cardsPath}/${id}`))
     setFolderPicker(null); load()
   }
+  const handleSubMove = async ({ catId: dstCatId }) => {
+    if (!movingSub || dstCatId === cat.id) { setMovingSub(null); return }
+    setMoving(true); setMovingSub(null)
+    await moveSubcatToCat(uid, cat.id, movingSub.id, dstCatId)
+    setMoving(false); load()
+  }
 
   return (
     <div className="app-bg" style={{ minHeight: '100vh', paddingBottom: 60 }}>
@@ -2315,6 +2484,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
                 onClick={() => onOpen(item)}
                 onRename={() => setRenaming(item)}
                 onDelete={() => remove(item.id)}
+                onMove={() => setMovingSub(item)}
                 onLearn={async () => {
                   const p = `${path}/${item.id}/cards`
                   const cs = await loadDocs(p)
@@ -2347,6 +2517,12 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
+      {movingSub    && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={cat.id} onPick={handleSubMove} onClose={() => setMovingSub(null)} />}
+      {moving       && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ color: T.textSub, fontSize: 14 }}>Wird verschoben…</div>
+        </div>
+      )}
       {kiImport  && (
         <KIImportScreen
           cardsPath={cardsPath}
@@ -2373,6 +2549,8 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
   const [learning,     setLearning]     = useState(false)
   const [rowLearn,     setRowLearn]     = useState(null) // { cards, cardsPath }
   const [folderPicker, setFolderPicker] = useState(null) // card being moved
+  const [movingSs,     setMovingSs]     = useState(null) // subsubcat being moved
+  const [moving,       setMoving]       = useState(false)
   const t         = useT()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories`
@@ -2418,6 +2596,12 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
     await deleteDoc(doc(db, `${cardsPath}/${id}`))
     setFolderPicker(null); load()
   }
+  const handleSsMove = async ({ catId: dstCatId, subId: dstSubId }) => {
+    if (!movingSs || !dstSubId) { setMovingSs(null); return }
+    setMoving(true); setMovingSs(null)
+    await moveSubsubcatToSub(uid, cat.id, sub.id, movingSs.id, dstCatId, dstSubId)
+    setMoving(false); load()
+  }
 
   return (
     <div className="app-bg" style={{ minHeight: '100vh', paddingBottom: 60 }}>
@@ -2451,6 +2635,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
                 onClick={() => onOpen(item)}
                 onRename={() => setRenaming(item)}
                 onDelete={() => remove(item.id)}
+                onMove={() => setMovingSs(item)}
                 onLearn={item._count > 0 ? async () => {
                   const p = `${path}/${item.id}/cards`
                   const cs = await loadDocs(p)
@@ -2482,6 +2667,12 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
       {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
       {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
+      {movingSs     && <MoveFolderModal uid={uid} mode="pick-subcat" excludeId={sub.id} onPick={handleSsMove} onClose={() => setMovingSs(null)} />}
+      {moving       && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ color: T.textSub, fontSize: 14 }}>Wird verschoben…</div>
+        </div>
+      )}
       {kiImport  && (
         <KIImportScreen
           cardsPath={cardsPath}
@@ -2607,6 +2798,21 @@ export default function App() {
     getDoc(doc(db, `users/${user.uid}/settings/preferences`))
       .then(snap => { if (snap.exists()) setSettings(snap.data()) })
       .catch(() => {})
+  }, [user?.uid])
+
+  // Ensure globalStats document exists (never overwrite — only create if missing)
+  useEffect(() => {
+    if (!user) return
+    const ref = doc(db, `users/${user.uid}/globalStats/main`)
+    getDoc(ref).then(snap => {
+      if (!snap.exists()) {
+        setDoc(ref, {
+          streakDays: 0, totalCards: 0,
+          weeklyMinutes: 0, monthlyMinutes: 0, yearlyMinutes: 0, totalMinutes: 0,
+          lastActive: Date.now(),
+        }).catch(() => {})
+      }
+    }).catch(() => {})
   }, [user?.uid])
 
   const push  = entry => setNav(n => [...n, entry])
