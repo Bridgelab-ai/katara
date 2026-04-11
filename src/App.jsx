@@ -356,7 +356,7 @@ const BridgelabBtn = () => {
   const [hov, setHov] = useState(false)
   return (
     <button
-      onClick={() => { window.location.href = 'https://vocara-peach.vercel.app' }}
+      onClick={() => { window.location.href = 'https://katara-bridgelab.vercel.app' }}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
@@ -530,7 +530,7 @@ const Header = ({ crumbs, onBack, right, title, onNavigate }) => {
       borderBottom: `1px solid ${T.border}44`,
     }}>
       <a
-        href="https://vocara-peach.vercel.app"
+        href="https://katara-bridgelab.vercel.app"
         style={{
           fontSize: 12, color: T.textDim, textDecoration: 'none',
           fontWeight: 500, letterSpacing: 0.3, transition: 'color 0.12s',
@@ -3268,7 +3268,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
           borderBottom: `1px solid ${T.border}44`,
         }}>
           <a
-            href="https://vocara-peach.vercel.app"
+            href="https://katara-bridgelab.vercel.app"
             style={{ fontSize: 12, color: T.textDim, textDecoration: 'none', fontWeight: 500, letterSpacing: 0.3, transition: 'color 0.12s', flexShrink: 0 }}
             onMouseEnter={e => e.currentTarget.style.color = T.textSub}
             onMouseLeave={e => e.currentTarget.style.color = T.textDim}
