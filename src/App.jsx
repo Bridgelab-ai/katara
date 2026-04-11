@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react'
-import { signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'firebase/auth'
+import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
 import {
   collection, addDoc, getDocs, deleteDoc, doc, limit,
   serverTimestamp, query, orderBy, updateDoc, setDoc, getDoc, increment, onSnapshot,
@@ -3103,7 +3103,7 @@ const LoginScreen = () => {
 
   const login = async () => {
     setLoading(true); setError('')
-    try { await signInWithRedirect(auth, provider) }
+    try { await signInWithPopup(auth, provider) }
     catch { setError('Anmeldung fehlgeschlagen — bitte erneut versuchen.'); setLoading(false) }
   }
 
@@ -3904,12 +3904,6 @@ export default function App() {
   const [incomingShares,setIncomingShares]= useState([])   // from sharedFromPartner
 
   useEffect(() => onAuthStateChanged(auth, u => setUser(u || null)), [])
-
-  useEffect(() => {
-    getRedirectResult(auth).then(result => {
-      if (result?.user) setUser(result.user)
-    }).catch(() => {})
-  }, [])
 
   // Load settings from Firestore when user logs in
   useEffect(() => {
