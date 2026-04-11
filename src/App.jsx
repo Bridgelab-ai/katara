@@ -356,7 +356,7 @@ const BridgelabBtn = () => {
   const [hov, setHov] = useState(false)
   return (
     <button
-      onClick={() => { window.location.href = 'https://katara-bridgelab.vercel.app' }}
+      onClick={() => { window.location.href = 'https://vocara-peach.vercel.app' }}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
@@ -530,7 +530,7 @@ const Header = ({ crumbs, onBack, right, title, onNavigate }) => {
       borderBottom: `1px solid ${T.border}44`,
     }}>
       <a
-        href="https://katara-bridgelab.vercel.app"
+        href="https://vocara-peach.vercel.app"
         style={{
           fontSize: 12, color: T.textDim, textDecoration: 'none',
           fontWeight: 500, letterSpacing: 0.3, transition: 'color 0.12s',
@@ -3268,7 +3268,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
           borderBottom: `1px solid ${T.border}44`,
         }}>
           <a
-            href="https://katara-bridgelab.vercel.app"
+            href="https://vocara-peach.vercel.app"
             style={{ fontSize: 12, color: T.textDim, textDecoration: 'none', fontWeight: 500, letterSpacing: 0.3, transition: 'color 0.12s', flexShrink: 0 }}
             onMouseEnter={e => e.currentTarget.style.color = T.textSub}
             onMouseLeave={e => e.currentTarget.style.color = T.textDim}
@@ -3345,50 +3345,39 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
           </div>
         )}
 
-        {!loading && items.length === 0 ? (
-          <div className="fade-in" style={{ maxWidth: 500, margin: '0 auto', padding: '32px 0', textAlign: 'center' }}>
-            <div style={{ fontSize: 40, marginBottom: 14 }}>📚</div>
-            <h3 style={{ fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 8 }}>Willkommen bei Katara!</h3>
-            <p style={{ fontSize: 14, color: T.textSub, marginBottom: 28, lineHeight: 1.6 }}>
-              Wähle einen Bereich oder erstelle eine eigene Kategorie.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
+        {/* Schnellstart — always visible */}
+        {!loading && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 8 }}>Schnellstart</div>
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
               {[
                 { icon: '💼', label: 'Beruf', color: 'blue' },
                 { icon: '🎓', label: 'Schule', color: 'purple' },
                 { icon: '📖', label: 'Studium', color: 'green' },
                 { icon: '🎯', label: 'Hobby', color: 'amber' },
-              ].map(({ icon, label, color }) => {
-                const hex = catColor(color)
-                return (
-                  <button
-                    key={label}
-                    onClick={() => label === 'Schule' ? setSchoolSetup(true) : create(label, color)}
-                    style={{
-                      background: T.s2, border: `1px solid ${T.border}`,
-                      borderTop: `3px solid ${hex}`,
-                      borderRadius: T.r2, padding: '20px 14px',
-                      cursor: 'pointer', transition: 'all 0.15s',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = T.s3; e.currentTarget.style.borderColor = hex + '88' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = T.s2; e.currentTarget.style.borderColor = T.border }}
-                  >
-                    <span style={{ fontSize: 30 }}>{icon}</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{label}</span>
-                  </button>
-                )
-              })}
+              ].map(({ icon, label, color }) => (
+                <button
+                  key={label}
+                  onClick={() => label === 'Schule' ? setSchoolSetup(true) : create(label, color)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 14px', borderRadius: 20, flexShrink: 0,
+                    background: T.s2, border: `1px solid ${T.border}`,
+                    color: T.textSub, fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', transition: 'all 0.12s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = T.s3; e.currentTarget.style.color = T.text; e.currentTarget.style.borderColor = T.borderHov }}
+                  onMouseLeave={e => { e.currentTarget.style.background = T.s2; e.currentTarget.style.color = T.textSub; e.currentTarget.style.borderColor = T.border }}
+                >
+                  <span>{icon}</span>{label}
+                </button>
+              ))}
             </div>
-            <button
-              onClick={() => setModal(true)}
-              style={{ background: 'none', border: 'none', color: T.textDim, fontSize: 13, cursor: 'pointer', textDecoration: 'underline', transition: 'color 0.12s' }}
-              onMouseEnter={e => e.currentTarget.style.color = T.textSub}
-              onMouseLeave={e => e.currentTarget.style.color = T.textDim}
-            >
-              Eigene Kategorie erstellen
-            </button>
           </div>
+        )}
+
+        {!loading && items.length === 0 ? (
+          <Empty icon="📚" title="Noch keine Kategorien" sub="Wähle einen Schnellstart oben oder erstelle eine eigene Kategorie." />
         ) : !loading && filtered.length === 0 ? (
           <Empty icon="🔍" title="Keine Treffer" sub={`Keine Kategorie enthält "${search}".`} />
         ) : (
