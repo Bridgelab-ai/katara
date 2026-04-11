@@ -97,6 +97,14 @@ const TIPS = {
 const PartnerContext = createContext({ partnerUid: null, partnerName: null })
 const usePartner = () => useContext(PartnerContext)
 
+// ─── SCHOOL MODE CONSTANTS ────────────────────────────────────────────────────
+const SCHOOL_GRADES = ['Vorschule', ...Array.from({ length: 12 }, (_, i) => `Klasse ${i + 1}`)]
+const SCHOOL_LANGS  = [
+  { id: 'de',    label: '🇩🇪 Deutsch' },
+  { id: 'en',    label: '🇬🇧 Englisch' },
+  { id: 'de+en', label: '🇩🇪+🇬🇧 Beide' },
+]
+
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 const toBase64 = f => new Promise((res, rej) => {
   const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(f)
@@ -2311,6 +2319,397 @@ const Empty = ({ icon, title, sub, children }) => (
   </div>
 )
 
+// ─── SCHOOL SETUP MODAL ───────────────────────────────────────────────────────
+const SchoolSetupModal = ({ onConfirm, onClose }) => {
+  const [grade, setGrade] = useState('Vorschule')
+  const [lang,  setLang]  = useState('de')
+
+  const chipStyle = active => ({
+    padding: '7px 14px', borderRadius: T.r, fontSize: 13, fontWeight: 600,
+    border: `1px solid ${active ? T.acc : T.border}`,
+    background: active ? T.accDim : T.s3,
+    color: active ? T.acc : T.textSub,
+    cursor: 'pointer', transition: 'all 0.12s', whiteSpace: 'nowrap',
+  })
+
+  return (
+    <Modal onClose={onClose} width={520}>
+      <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 6 }}>🎓 Schule einrichten</h3>
+      <p style={{ fontSize: 13, color: T.textSub, marginBottom: 22 }}>
+        Wähle Klassenstufe und Sprache — die KI passt die Karten automatisch an.
+      </p>
+
+      {/* Grade */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>Klassenstufe</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {SCHOOL_GRADES.map(g => (
+            <button key={g} onClick={() => setGrade(g)} style={chipStyle(grade === g)}>{g}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Language */}
+      <div style={{ marginBottom: 26 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>Sprache</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {SCHOOL_LANGS.map(l => (
+            <button key={l.id} onClick={() => setLang(l.id)} style={chipStyle(lang === l.id)}>{l.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10 }}>
+        <Btn onClick={() => onConfirm(grade, lang)} full style={{ padding: '11px' }}>Kategorie erstellen</Btn>
+        <Btn onClick={onClose} variant="secondary" style={{ padding: '11px 16px', flexShrink: 0 }}>Abbrechen</Btn>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── SCHOOL KI GENERATE MODAL ─────────────────────────────────────────────────
+const SchoolKIGenerateModal = ({ cat, cardsPath, onSaved, onClose }) => {
+  const [topic,   setTopic]   = useState('')
+  const [count,   setCount]   = useState(10)
+  const [loading, setLoading] = useState(false)
+  const [preview, setPreview] = useState(null)
+  const [error,   setError]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+
+  const grade = cat.schoolGrade || 'Klasse 1'
+  const lang  = cat.schoolLang  || 'de'
+  const isYoung = grade === 'Vorschule' || grade === 'Klasse 1' || grade === 'Klasse 2'
+
+  const generate = async () => {
+    if (!topic.trim() && !isYoung) return
+    setLoading(true); setError(''); setPreview(null)
+    const topicStr = topic.trim() || 'Grundwortschatz'
+    const ageNote  = isYoung
+      ? `for ${grade} children (age 4-8). Use very simple, common, single-word concepts. Include a relevant emoji for each word.`
+      : `for ${grade} students in Germany. Use age-appropriate vocabulary and concepts.`
+    const langNote = lang === 'de+en'
+      ? 'Provide back_de (German answer) AND back_en (English translation) for every card.'
+      : lang === 'en'
+        ? 'Cards in English. back field = English answer, back_de = German equivalent, back_en = English.'
+        : 'Cards in German. back field = German answer, back_de = German, back_en = English translation.'
+
+    const prompt = `Create exactly ${count} flashcards ${ageNote}
+Topic: "${topicStr}"
+${langNote}
+
+Return ONLY a valid JSON array, no markdown:
+[{"front":"...","back":"...","back_de":"...","back_en":"...","emoji":"..."}]`
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2048, messages: [{ role: 'user', content: prompt }] }),
+      })
+      const data = await res.json()
+      const raw  = data.content?.[0]?.text || ''
+      const m    = raw.match(/\[[\s\S]*\]/)
+      if (!m) throw new Error('KI hat kein gültiges JSON zurückgegeben.')
+      const cards = JSON.parse(m[0])
+      if (!Array.isArray(cards) || cards.length === 0) throw new Error('Keine Karten generiert.')
+      setPreview(cards)
+    } catch (e) { setError(e.message) }
+    setLoading(false)
+  }
+
+  const saveAll = async () => {
+    setSaving(true)
+    for (const c of preview) {
+      await addDoc(collection(db, cardsPath), {
+        front: c.front || '', back: c.back || c.back_de || c.front || '',
+        back_de: c.back_de || '', back_en: c.back_en || '',
+        backShort: '', emoji: c.emoji || '',
+        image: null, correctCount: 0, wrongCount: 0,
+        mastery: 0, lastReviewed: null, createdAt: serverTimestamp(),
+      })
+    }
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <Modal onClose={onClose} width={540}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+        <div style={{ fontSize: 22 }}>✦</div>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>KI Karten generieren</div>
+          <div style={{ fontSize: 12, color: T.textDim, marginTop: 2 }}>
+            {grade} · {SCHOOL_LANGS.find(l => l.id === lang)?.label}
+          </div>
+        </div>
+      </div>
+
+      {!preview && (
+        <>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 8 }}>
+              Thema {isYoung ? '(z.B. Tiere, Farben, Zahlen)' : '(z.B. Vokabeln, Hauptstädte)'}
+            </div>
+            <input
+              autoFocus value={topic} onChange={e => setTopic(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && generate()}
+              placeholder={isYoung ? 'z.B. Tiere im Zoo' : 'z.B. Englische Vokabeln Kapitel 3'}
+              style={{ width: '100%', marginBottom: 14 }}
+            />
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 8 }}>Anzahl Karten</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[5, 10, 15, 20].map(n => (
+                <button key={n} onClick={() => setCount(n)} style={{
+                  padding: '7px 16px', borderRadius: T.r, fontSize: 13, fontWeight: 600,
+                  border: `1px solid ${count === n ? T.acc : T.border}`,
+                  background: count === n ? T.accDim : T.s3,
+                  color: count === n ? T.acc : T.textSub, cursor: 'pointer',
+                }}>{n}</button>
+              ))}
+            </div>
+          </div>
+          {error && <div style={{ fontSize: 13, color: T.red, padding: '10px 14px', background: T.redDim, borderRadius: T.r, marginBottom: 14 }}>{error}</div>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Btn onClick={generate} disabled={loading} full style={{ padding: '11px' }}>
+              {loading ? '✦ Generiert…' : '✦ Karten generieren'}
+            </Btn>
+            <Btn onClick={onClose} variant="secondary" style={{ padding: '11px 14px', flexShrink: 0 }}>Abbrechen</Btn>
+          </div>
+        </>
+      )}
+
+      {preview && (
+        <>
+          <div style={{ fontSize: 13, color: T.textSub, marginBottom: 14 }}>
+            {preview.length} Karten generiert für <strong style={{ color: T.text }}>{topic || 'Grundwortschatz'}</strong>
+          </div>
+          <div style={{ maxHeight: 320, overflowY: 'auto', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {preview.map((c, i) => (
+              <div key={i} style={{ background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                {c.emoji && <span style={{ fontSize: 22, flexShrink: 0 }}>{c.emoji}</span>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{c.front}</div>
+                  <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>
+                    {lang === 'de+en' ? `🇩🇪 ${c.back_de}  ·  🇬🇧 ${c.back_en}` : c.back}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Btn onClick={saveAll} disabled={saving} full style={{ padding: '11px' }} variant="success">
+              {saving ? 'Speichert…' : `✓ ${preview.length} Karten speichern`}
+            </Btn>
+            <Btn onClick={() => setPreview(null)} variant="secondary" style={{ padding: '11px 14px', flexShrink: 0 }}>Neu generieren</Btn>
+          </div>
+        </>
+      )}
+    </Modal>
+  )
+}
+
+// ─── VORSCHULE LEARN MODE ─────────────────────────────────────────────────────
+const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) => {
+  const [session, setSession] = useState(() => [...initCards].sort(() => Math.random() - 0.5))
+  const [idx,     setIdx]     = useState(0)
+  const [phase,   setPhase]   = useState('question') // question|listening|correct|wrong|revealed|done
+  const [results, setResults] = useState([])
+  const [spoken,  setSpoken]  = useState('')
+  const sessionStart = useRef(Date.now())
+
+  const lang      = cat.schoolLang || 'de'
+  const speechLang = lang === 'en' ? 'en-GB' : 'de-DE'
+  const card      = session[idx]
+  const hasSpeech = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+
+  const normalise = s => (s || '').toLowerCase().trim().replace(/[^a-z0-9äöüß]/gi, '')
+
+  const isCorrect = transcript => {
+    const de = normalise(card.back_de || card.back || card.front)
+    const en = normalise(card.back_en || '')
+    const sp = normalise(transcript)
+    if (!sp) return false
+    if (lang === 'en')    return sp === en || en.startsWith(sp) || sp.includes(en)
+    if (lang === 'de+en') return sp === de || sp === en || de.startsWith(sp) || en.startsWith(sp)
+    return sp === de || de.startsWith(sp) || sp.includes(de)
+  }
+
+  const startListening = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) return
+    const r = new SR()
+    r.lang = speechLang
+    r.interimResults = false
+    r.maxAlternatives = 4
+    r.onresult = e => {
+      const alts = Array.from(e.results[0]).map(a => a.transcript)
+      setSpoken(alts[0] || '')
+      setPhase(alts.some(a => isCorrect(a)) ? 'correct' : 'wrong')
+    }
+    r.onerror = () => setPhase('question')
+    r.start()
+    setPhase('listening')
+  }
+
+  const advance = async (knew) => {
+    const cur = card.mastery || 0
+    const newMastery = knew ? Math.min(3, cur + 1) : Math.max(1, cur - 1)
+    try {
+      await updateDoc(doc(db, `${cardsPath}/${card.id}`), { mastery: newMastery, lastReviewed: serverTimestamp() })
+    } catch (_) {}
+    const newResults = [...results, { card, knew }]
+    if (idx + 1 >= session.length) {
+      const mins = Math.max(1, Math.round((Date.now() - sessionStart.current) / 60000))
+      updateGlobalStats(uid, newResults.length, mins)
+      setResults(newResults)
+      setPhase('done')
+    } else {
+      setResults(newResults)
+      setIdx(i => i + 1)
+      setSpoken('')
+      setPhase('question')
+    }
+  }
+
+  const getAnswer = () => {
+    if (lang === 'en')    return card.back_en || card.back || card.front
+    if (lang === 'de+en') return `${card.back_de || card.back || card.front}  /  ${card.back_en || ''}`
+    return card.back_de || card.back || card.front
+  }
+
+  // ── DONE ────────────────────────────────────────────────────────────────────
+  if (phase === 'done') {
+    const knew = results.filter(r => r.knew).length
+    const pct  = Math.round(knew / results.length * 100)
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div className="fade-in" style={{ textAlign: 'center', maxWidth: 400 }}>
+          <div style={{ fontSize: 64, marginBottom: 16 }}>{pct >= 80 ? '🌟' : pct >= 50 ? '👍' : '💪'}</div>
+          <h2 style={{ fontSize: 26, fontWeight: 800, color: T.text, marginBottom: 8 }}>Super gemacht!</h2>
+          <p style={{ color: T.textSub, marginBottom: 28 }}>{knew} von {results.length} Karten richtig ({pct}%)</p>
+          <Btn onClick={onClose} full style={{ padding: '14px', fontSize: 16 }}>Fertig</Btn>
+        </div>
+      </div>
+    )
+  }
+
+  // ── SESSION ──────────────────────────────────────────────────────────────────
+  const progress = idx / session.length * 100
+  const bgColor  = phase === 'correct' ? '#0D2E1E' : phase === 'wrong' ? '#2E0D0D' : T.s1
+  const borderColor = phase === 'correct' ? T.green : phase === 'wrong' ? T.red : T.border
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: T.bg, display: 'flex', flexDirection: 'column' }}>
+      {/* Top bar */}
+      <div style={{ background: `${T.bg}EE`, borderBottom: `1px solid ${T.border}`, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+        <Btn onClick={onClose} variant="secondary" style={{ padding: '6px 12px', fontSize: 13, flexShrink: 0 }}>✕ Beenden</Btn>
+        <div style={{ flex: 1, height: 6, background: T.s4, borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${progress}%`, background: T.acc, borderRadius: 3, transition: 'width 0.3s' }} />
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: T.textSub, flexShrink: 0 }}>{idx + 1} / {session.length}</div>
+      </div>
+
+      {/* Card area */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ width: '100%', maxWidth: 480 }}>
+          {/* Flash card */}
+          <div className="fade-in" style={{
+            background: bgColor, border: `2px solid ${borderColor}`,
+            borderRadius: 20, padding: '48px 32px',
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            textAlign: 'center', marginBottom: 20,
+            transition: 'background 0.3s, border-color 0.3s',
+            minHeight: 280,
+          }}>
+            {/* Emoji (big visual) */}
+            {card.emoji && (
+              <div style={{ fontSize: 72, marginBottom: 16, lineHeight: 1 }}>{card.emoji}</div>
+            )}
+            {/* Front word */}
+            <div style={{ fontSize: card.emoji ? 28 : 40, fontWeight: 800, color: T.text, lineHeight: 1.2, marginBottom: 8 }}>
+              {card.front}
+            </div>
+            {/* Phase indicator */}
+            {phase === 'listening' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, color: T.acc, fontSize: 14, fontWeight: 600 }}>
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: T.acc, animation: 'pulse 1s infinite' }} />
+                Ich höre zu…
+              </div>
+            )}
+            {phase === 'correct' && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 32, marginBottom: 6 }}>✓</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: T.green }}>{getAnswer()}</div>
+                {spoken && <div style={{ fontSize: 13, color: T.textDim, marginTop: 6 }}>Du hast gesagt: „{spoken}"</div>}
+              </div>
+            )}
+            {phase === 'wrong' && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 32, marginBottom: 6 }}>✗</div>
+                {spoken && <div style={{ fontSize: 14, color: T.textDim, marginBottom: 6 }}>Du hast gesagt: „{spoken}"</div>}
+                <div style={{ fontSize: 13, color: T.textSub }}>Richtige Antwort:</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: T.red, marginTop: 4 }}>{getAnswer()}</div>
+              </div>
+            )}
+            {phase === 'revealed' && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 13, color: T.textSub, marginBottom: 6 }}>Antwort:</div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: T.text }}>{getAnswer()}</div>
+              </div>
+            )}
+          </div>
+
+          {/* Buttons */}
+          {phase === 'question' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {hasSpeech && (
+                <button
+                  onClick={startListening}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                    width: '100%', padding: '18px', borderRadius: T.r2,
+                    background: T.acc, border: 'none', color: '#fff',
+                    fontSize: 17, fontWeight: 700, cursor: 'pointer',
+                    boxShadow: `0 0 24px ${T.accGlow}`,
+                  }}
+                >
+                  🎤 Antwort sprechen
+                </button>
+              )}
+              <button
+                onClick={() => setPhase('revealed')}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '100%', padding: '13px', borderRadius: T.r2,
+                  background: T.s3, border: `1px solid ${T.border}`,
+                  color: T.textSub, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                Antwort zeigen
+              </button>
+            </div>
+          )}
+          {phase === 'listening' && (
+            <div style={{ textAlign: 'center', color: T.textDim, fontSize: 13 }}>Bitte sprich deutlich…</div>
+          )}
+          {(phase === 'correct' || phase === 'wrong') && (
+            <Btn onClick={() => advance(phase === 'correct')} full style={{ padding: '16px', fontSize: 16 }}>
+              Weiter →
+            </Btn>
+          )}
+          {phase === 'revealed' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Btn onClick={() => advance(false)} variant="danger" style={{ padding: '14px', fontSize: 15, borderRadius: T.r2 }}>✗ Nochmal</Btn>
+              <Btn onClick={() => advance(true)} variant="success" style={{ padding: '14px', fontSize: 15, borderRadius: T.r2 }}>✓ Gewusst</Btn>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── SETTINGS SCREEN ─────────────────────────────────────────────────────────
 const SettingsScreen = ({ user, settings, onSave, onBack }) => {
   const t = useT()
@@ -2624,6 +3023,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
   const [moving,      setMoving]      = useState(false)
   const [exportData,  setExportData]  = useState(null) // { cards, name }
   const [activeTip,   setActiveTip]   = useState(null)
+  const [schoolSetup, setSchoolSetup] = useState(false)
   const { dismissed, dismiss }        = useTips()
   const { partnerUid, partnerName }   = usePartner()
   const partnerInfo = partnerUid ? { uid: partnerUid, name: partnerName } : null
@@ -2646,9 +3046,9 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
 
   useEffect(() => { load() }, [load])
 
-  const create = async (name, color) => {
+  const create = async (name, color, extra = {}) => {
     try {
-      await addDoc(collection(db, path), { name, color: color || 'blue', createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+      await addDoc(collection(db, path), { name, color: color || 'blue', ...extra, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
       load()
     } catch (err) {
       console.error('[Katara] createCategory — addDoc failed:', err)
@@ -2816,7 +3216,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
                 return (
                   <button
                     key={label}
-                    onClick={() => create(label, color)}
+                    onClick={() => label === 'Schule' ? setSchoolSetup(true) : create(label, color)}
                     style={{
                       background: T.s2, border: `1px solid ${T.border}`,
                       borderTop: `3px solid ${hex}`,
@@ -2869,6 +3269,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
       </div>
 
       {modal       && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
+      {schoolSetup && <SchoolSetupModal onConfirm={(grade, lang) => { create('Schule', 'purple', { schoolMode: true, schoolGrade: grade, schoolLang: lang }); setSchoolSetup(false) }} onClose={() => setSchoolSetup(false)} />}
       {renaming    && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {shareTarget && activeTip === 'teilen' && <TipModal tipKey="teilen" onClose={() => setActiveTip(null)} />}
       {shareTarget && activeTip !== 'teilen' && <ShareModal catName={shareTarget.name} partnerName={partnerInfo?.name || 'Partner'} sharing={sharing} onConfirm={shareWithPartner} onClose={() => setShareTarget(null)} />}
@@ -2900,10 +3301,13 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
   const [exportData,   setExportData]   = useState(null) // { cards, name }
   const [activeTip,    setActiveTip]    = useState(null)
   const [sendTarget,   setSendTarget]   = useState(null) // { name, getCards }
+  const [schoolKi,     setSchoolKi]     = useState(false)
   const { dismissed }  = useTips()
   const { partnerUid, partnerName }     = usePartner()
   const t         = useT()
   const uid       = user.uid
+  const isSchool  = !!cat.schoolMode
+  const isVorschule = isSchool && (cat.schoolGrade === 'Vorschule' || cat.schoolGrade === 'Klasse 1' || cat.schoolGrade === 'Klasse 2')
   const path      = `users/${uid}/categories/${cat.id}/subcategories`
   const cardsPath = `users/${uid}/categories/${cat.id}/cards`
 
@@ -2962,7 +3366,10 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
         onNavigate={onNavigate}
         right={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn onClick={() => { if (!dismissed.has('ki-import')) setActiveTip('ki-import'); else setKiImport(true) }} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>{t.kiCreate}</Btn>
+            {isSchool
+              ? <Btn onClick={() => setSchoolKi(true)} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>✦ KI generieren</Btn>
+              : <Btn onClick={() => { if (!dismissed.has('ki-import')) setActiveTip('ki-import'); else setKiImport(true) }} variant="ghost" style={{ padding: '7px 12px', fontSize: 13 }}>{t.kiCreate}</Btn>
+            }
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '7px 12px', fontSize: 13 }}>{t.addCard}</Btn>
             <Btn onClick={() => setModal(true)} style={{ padding: '7px 14px', fontSize: 13 }}>{t.newGroup}</Btn>
           </div>
@@ -3016,9 +3423,12 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase' }}>
                 {t.cards} ({cards.length})
+                {isSchool && cat.schoolGrade && (
+                  <span style={{ marginLeft: 8, color: T.acc, fontWeight: 600 }}>{cat.schoolGrade}</span>
+                )}
               </div>
-              <Btn onClick={() => { if (!dismissed.has('lernen')) setActiveTip('lernen'); else setLearning(true) }} variant="success" style={{ padding: '7px 18px', fontSize: 13 }}>
-                {t.learn}
+              <Btn onClick={() => { if (isVorschule) setLearning(true); else if (!dismissed.has('lernen')) setActiveTip('lernen'); else setLearning(true) }} variant="success" style={{ padding: '7px 18px', fontSize: 13 }}>
+                {isVorschule ? '🎤 Lernen' : t.learn}
               </Btn>
             </div>
             {cards.map(c => (
@@ -3032,7 +3442,10 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
       {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
       {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const t = activeTip; setActiveTip(null); if (t === 'ki-import') setKiImport(true); else if (t === 'lernen') setLearning(true) }} />}
       {sendTarget   && <SendToPartnerModal uid={uid} displayName={user.displayName || user.email} name={sendTarget.name} getCards={sendTarget.getCards} onClose={() => setSendTarget(null)} />}
-      {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
+      {learning     && isVorschule
+        ? <VorschuleLearnMode cards={cards} cardsPath={cardsPath} cat={cat} uid={uid} onClose={() => { setLearning(false); load() }} />
+        : learning && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />
+      }
       {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
       {movingSub    && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={cat.id} onPick={handleSubMove} onClose={() => setMovingSub(null)} />}
@@ -3053,6 +3466,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
           onClose={() => setKiImport(false)}
         />
       )}
+      {schoolKi  && <SchoolKIGenerateModal cat={cat} cardsPath={cardsPath} onSaved={() => { setSchoolKi(false); load() }} onClose={() => setSchoolKi(false)} />}
     </div>
   )
 }
