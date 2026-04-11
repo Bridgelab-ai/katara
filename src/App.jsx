@@ -104,6 +104,15 @@ const SCHOOL_LANGS  = [
   { id: 'en',    label: '🇬🇧 Englisch' },
   { id: 'de+en', label: '🇩🇪+🇬🇧 Beide' },
 ]
+const SCHOOL_COUNTRIES = [
+  { id: 'de', flag: '🇩🇪', name: 'Deutschland',  curriculum: 'KMK'                },
+  { id: 'ke', flag: '🇰🇪', name: 'Kenia',         curriculum: 'CBC'                },
+  { id: 'at', flag: '🇦🇹', name: 'Österreich',    curriculum: 'BMBWF'              },
+  { id: 'ch', flag: '🇨🇭', name: 'Schweiz',       curriculum: 'LP21'               },
+  { id: 'gb', flag: '🇬🇧', name: 'UK',            curriculum: 'National Curriculum' },
+  { id: 'us', flag: '🇺🇸', name: 'USA',           curriculum: 'Common Core'        },
+  { id: 'other', flag: '🌍', name: 'Andere',       curriculum: ''                   },
+]
 
 // ─── UTILS ────────────────────────────────────────────────────────────────────
 const toBase64 = f => new Promise((res, rej) => {
@@ -2321,46 +2330,62 @@ const Empty = ({ icon, title, sub, children }) => (
 
 // ─── SCHOOL SETUP MODAL ───────────────────────────────────────────────────────
 const SchoolSetupModal = ({ onConfirm, onClose }) => {
-  const [grade, setGrade] = useState('Vorschule')
-  const [lang,  setLang]  = useState('de')
+  const [grade,   setGrade]   = useState('Klasse 1')
+  const [lang,    setLang]    = useState('de')
+  const [country, setCountry] = useState('de')
 
-  const chipStyle = active => ({
-    padding: '7px 14px', borderRadius: T.r, fontSize: 13, fontWeight: 600,
+  const chip = (active) => ({
+    padding: '6px 12px', borderRadius: T.r, fontSize: 13, fontWeight: 600,
     border: `1px solid ${active ? T.acc : T.border}`,
     background: active ? T.accDim : T.s3,
     color: active ? T.acc : T.textSub,
     cursor: 'pointer', transition: 'all 0.12s', whiteSpace: 'nowrap',
   })
+  const label = (text) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>{text}</div>
+  )
 
   return (
-    <Modal onClose={onClose} width={520}>
+    <Modal onClose={onClose} width={560}>
       <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 6 }}>🎓 Schule einrichten</h3>
       <p style={{ fontSize: 13, color: T.textSub, marginBottom: 22 }}>
-        Wähle Klassenstufe und Sprache — die KI passt die Karten automatisch an.
+        KI kennt den offiziellen Lehrplan für dein Land und generiert altersgerechte Karten.
       </p>
 
+      {/* Country */}
+      <div style={{ marginBottom: 18 }}>
+        {label('Land / Lehrplan')}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {SCHOOL_COUNTRIES.map(c => (
+            <button key={c.id} onClick={() => setCountry(c.id)} style={chip(country === c.id)}>
+              {c.flag} {c.name}{c.curriculum ? ` (${c.curriculum})` : ''}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Grade */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>Klassenstufe</div>
+      <div style={{ marginBottom: 18 }}>
+        {label('Klassenstufe')}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {SCHOOL_GRADES.map(g => (
-            <button key={g} onClick={() => setGrade(g)} style={chipStyle(grade === g)}>{g}</button>
+            <button key={g} onClick={() => setGrade(g)} style={chip(grade === g)}>{g}</button>
           ))}
         </div>
       </div>
 
       {/* Language */}
       <div style={{ marginBottom: 26 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>Sprache</div>
+        {label('Lernsprache')}
         <div style={{ display: 'flex', gap: 8 }}>
           {SCHOOL_LANGS.map(l => (
-            <button key={l.id} onClick={() => setLang(l.id)} style={chipStyle(lang === l.id)}>{l.label}</button>
+            <button key={l.id} onClick={() => setLang(l.id)} style={chip(lang === l.id)}>{l.label}</button>
           ))}
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 10 }}>
-        <Btn onClick={() => onConfirm(grade, lang)} full style={{ padding: '11px' }}>Kategorie erstellen</Btn>
+        <Btn onClick={() => onConfirm(grade, lang, country)} full style={{ padding: '11px' }}>Kategorie erstellen</Btn>
         <Btn onClick={onClose} variant="secondary" style={{ padding: '11px 16px', flexShrink: 0 }}>Abbrechen</Btn>
       </div>
     </Modal>
@@ -2368,42 +2393,86 @@ const SchoolSetupModal = ({ onConfirm, onClose }) => {
 }
 
 // ─── SCHOOL KI GENERATE MODAL ─────────────────────────────────────────────────
+// Phase: 'curriculum' → fetching curriculum overview
+//        'overview'   → showing subjects + topic checkboxes
+//        'generating' → generating cards
+//        'preview'    → reviewing cards before save
 const SchoolKIGenerateModal = ({ cat, cardsPath, onSaved, onClose }) => {
-  const [topic,   setTopic]   = useState('')
-  const [count,   setCount]   = useState(10)
-  const [loading, setLoading] = useState(false)
-  const [preview, setPreview] = useState(null)
-  const [error,   setError]   = useState('')
-  const [saving,  setSaving]  = useState(false)
+  const [phase,       setPhase]       = useState('curriculum')
+  const [curriculum,  setCurriculum]  = useState([])   // [{subject, icon, topics:[]}]
+  const [selected,    setSelected]    = useState({})   // { subject: true/false }
+  const [curErr,      setCurErr]      = useState('')
+  const [count,       setCount]       = useState(10)
+  const [preview,     setPreview]     = useState(null)
+  const [genErr,      setGenErr]      = useState('')
+  const [saving,      setSaving]      = useState(false)
 
-  const grade = cat.schoolGrade || 'Klasse 1'
-  const lang  = cat.schoolLang  || 'de'
+  const grade   = cat.schoolGrade   || 'Klasse 1'
+  const lang    = cat.schoolLang    || 'de'
+  const country = cat.schoolCountry || 'de'
+  const countryInfo = SCHOOL_COUNTRIES.find(c => c.id === country) || SCHOOL_COUNTRIES[0]
   const isYoung = grade === 'Vorschule' || grade === 'Klasse 1' || grade === 'Klasse 2'
 
-  const generate = async () => {
-    if (!topic.trim() && !isYoung) return
-    setLoading(true); setError(''); setPreview(null)
-    const topicStr = topic.trim() || 'Grundwortschatz'
-    const ageNote  = isYoung
-      ? `for ${grade} children (age 4-8). Use very simple, common, single-word concepts. Include a relevant emoji for each word.`
-      : `for ${grade} students in Germany. Use age-appropriate vocabulary and concepts.`
-    const langNote = lang === 'de+en'
-      ? 'Provide back_de (German answer) AND back_en (English translation) for every card.'
-      : lang === 'en'
-        ? 'Cards in English. back field = English answer, back_de = German equivalent, back_en = English.'
-        : 'Cards in German. back field = German answer, back_de = German, back_en = English translation.'
+  // Auto-fetch curriculum on mount
+  useEffect(() => {
+    const curriculumName = countryInfo.curriculum || countryInfo.name
+    const prompt = `You are an expert in the ${curriculumName} curriculum${countryInfo.id !== 'other' ? ` (${countryInfo.name})` : ''}.
+List ALL required subjects and their key learning topics for ${grade}.
+Include what is taught, tested, and required that school year.
+Return ONLY a valid JSON array, no markdown:
+[{"subject":"Mathematics","icon":"🔢","topics":["Addition","Subtraction","Shapes"]},...]`
 
-    const prompt = `Create exactly ${count} flashcards ${ageNote}
-Topic: "${topicStr}"
+    fetch('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1200, messages: [{ role: 'user', content: prompt }] }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        const raw = data.content?.[0]?.text || ''
+        const m = raw.match(/\[[\s\S]*\]/)
+        if (!m) throw new Error('no json')
+        const subs = JSON.parse(m[0])
+        setCurriculum(subs)
+        // Pre-select all
+        const sel = {}
+        subs.forEach(s => { sel[s.subject] = true })
+        setSelected(sel)
+        setPhase('overview')
+      })
+      .catch(() => { setCurErr('Lehrplan konnte nicht geladen werden.'); setPhase('overview') })
+  }, [])
+
+  const toggleSubject = subject => setSelected(p => ({ ...p, [subject]: !p[subject] }))
+
+  const generateCards = async () => {
+    const chosenSubjects = curriculum.filter(s => selected[s.subject])
+    if (chosenSubjects.length === 0) return
+    setPhase('generating'); setGenErr('')
+
+    const subjText = chosenSubjects.map(s =>
+      `${s.subject}: ${(s.topics || []).join(', ')}`
+    ).join('\n')
+
+    const langNote = lang === 'de+en'
+      ? 'Provide back_de (German) AND back_en (English) for every card.'
+      : lang === 'en'
+        ? 'Cards in English. back = English answer, back_de = German, back_en = English.'
+        : 'Cards in German. back = German answer, back_de = German, back_en = English translation.'
+
+    const prompt = `Create exactly ${count} flashcards for ${grade} students in ${countryInfo.name} following the ${countryInfo.curriculum || 'standard'} curriculum.
+Cover these subjects and topics (distribute cards across all subjects):
+${subjText}
+
+${isYoung ? 'Use very simple language. Include a relevant emoji for each card.' : 'Use age-appropriate difficulty.'}
 ${langNote}
 
 Return ONLY a valid JSON array, no markdown:
-[{"front":"...","back":"...","back_de":"...","back_en":"...","emoji":"..."}]`
+[{"front":"...","back":"...","back_de":"...","back_en":"...","emoji":"...","subject":"..."}]`
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2048, messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 3000, messages: [{ role: 'user', content: prompt }] }),
       })
       const data = await res.json()
       const raw  = data.content?.[0]?.text || ''
@@ -2412,8 +2481,8 @@ Return ONLY a valid JSON array, no markdown:
       const cards = JSON.parse(m[0])
       if (!Array.isArray(cards) || cards.length === 0) throw new Error('Keine Karten generiert.')
       setPreview(cards)
-    } catch (e) { setError(e.message) }
-    setLoading(false)
+      setPhase('preview')
+    } catch (e) { setGenErr(e.message); setPhase('overview') }
   }
 
   const saveAll = async () => {
@@ -2422,7 +2491,7 @@ Return ONLY a valid JSON array, no markdown:
       await addDoc(collection(db, cardsPath), {
         front: c.front || '', back: c.back || c.back_de || c.front || '',
         back_de: c.back_de || '', back_en: c.back_en || '',
-        backShort: '', emoji: c.emoji || '',
+        backShort: '', emoji: c.emoji || '', subject: c.subject || '',
         image: null, correctCount: 0, wrongCount: 0,
         mastery: 0, lastReviewed: null, createdAt: serverTimestamp(),
       })
@@ -2431,80 +2500,154 @@ Return ONLY a valid JSON array, no markdown:
     onSaved()
   }
 
-  return (
-    <Modal onClose={onClose} width={540}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-        <div style={{ fontSize: 22 }}>✦</div>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>KI Karten generieren</div>
-          <div style={{ fontSize: 12, color: T.textDim, marginTop: 2 }}>
-            {grade} · {SCHOOL_LANGS.find(l => l.id === lang)?.label}
-          </div>
+  const headerInfo = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+      <div style={{ fontSize: 22 }}>✦</div>
+      <div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Lehrplan-KI</div>
+        <div style={{ fontSize: 12, color: T.textDim, marginTop: 2 }}>
+          {countryInfo.flag} {grade} · {countryInfo.curriculum || countryInfo.name} · {SCHOOL_LANGS.find(l => l.id === lang)?.label}
         </div>
       </div>
+    </div>
+  )
 
-      {!preview && (
-        <>
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 8 }}>
-              Thema {isYoung ? '(z.B. Tiere, Farben, Zahlen)' : '(z.B. Vokabeln, Hauptstädte)'}
-            </div>
-            <input
-              autoFocus value={topic} onChange={e => setTopic(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && generate()}
-              placeholder={isYoung ? 'z.B. Tiere im Zoo' : 'z.B. Englische Vokabeln Kapitel 3'}
-              style={{ width: '100%', marginBottom: 14 }}
-            />
-          </div>
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 8 }}>Anzahl Karten</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[5, 10, 15, 20].map(n => (
-                <button key={n} onClick={() => setCount(n)} style={{
-                  padding: '7px 16px', borderRadius: T.r, fontSize: 13, fontWeight: 600,
-                  border: `1px solid ${count === n ? T.acc : T.border}`,
-                  background: count === n ? T.accDim : T.s3,
-                  color: count === n ? T.acc : T.textSub, cursor: 'pointer',
-                }}>{n}</button>
-              ))}
-            </div>
-          </div>
-          {error && <div style={{ fontSize: 13, color: T.red, padding: '10px 14px', background: T.redDim, borderRadius: T.r, marginBottom: 14 }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Btn onClick={generate} disabled={loading} full style={{ padding: '11px' }}>
-              {loading ? '✦ Generiert…' : '✦ Karten generieren'}
-            </Btn>
-            <Btn onClick={onClose} variant="secondary" style={{ padding: '11px 14px', flexShrink: 0 }}>Abbrechen</Btn>
-          </div>
-        </>
-      )}
+  // ── LOADING CURRICULUM ────────────────────────────────────────────────────────
+  if (phase === 'curriculum') {
+    return (
+      <Modal onClose={onClose} width={540}>
+        {headerInfo}
+        <div style={{ textAlign: 'center', padding: '28px 0', color: T.textSub, fontSize: 14 }}>
+          <div style={{ fontSize: 28, marginBottom: 12 }}>✦</div>
+          Lehrplan wird geladen…
+        </div>
+      </Modal>
+    )
+  }
 
-      {preview && (
-        <>
-          <div style={{ fontSize: 13, color: T.textSub, marginBottom: 14 }}>
-            {preview.length} Karten generiert für <strong style={{ color: T.text }}>{topic || 'Grundwortschatz'}</strong>
+  // ── GENERATING CARDS ─────────────────────────────────────────────────────────
+  if (phase === 'generating') {
+    return (
+      <Modal onClose={onClose} width={540}>
+        {headerInfo}
+        <div style={{ textAlign: 'center', padding: '28px 0', color: T.textSub, fontSize: 14 }}>
+          <div style={{ fontSize: 28, marginBottom: 12, color: T.acc }}>✦</div>
+          Karten werden generiert…
+        </div>
+      </Modal>
+    )
+  }
+
+  // ── OVERVIEW — subject/topic picker ──────────────────────────────────────────
+  if (phase === 'overview') {
+    const selCount = Object.values(selected).filter(Boolean).length
+    return (
+      <Modal onClose={onClose} width={580}>
+        {headerInfo}
+
+        {curErr && <div style={{ fontSize: 13, color: T.amber, padding: '8px 12px', background: `${T.amber}18`, borderRadius: T.r, marginBottom: 14 }}>{curErr}</div>}
+
+        {curriculum.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 12 }}>
+              Fächer & Themen — {grade} {countryInfo.flag}
+            </div>
+            <div style={{ maxHeight: 340, overflowY: 'auto', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {curriculum.map(sub => {
+                const on = !!selected[sub.subject]
+                return (
+                  <div
+                    key={sub.subject}
+                    onClick={() => toggleSubject(sub.subject)}
+                    style={{
+                      background: on ? T.accDim : T.s1,
+                      border: `1px solid ${on ? T.acc : T.border}`,
+                      borderRadius: T.r, padding: '12px 14px',
+                      cursor: 'pointer', transition: 'all 0.12s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: sub.topics?.length ? 6 : 0 }}>
+                      <span style={{ fontSize: 18 }}>{sub.icon || '📚'}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: on ? T.acc : T.text }}>{sub.subject}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 16, color: on ? T.acc : T.textDim }}>{on ? '☑' : '☐'}</span>
+                    </div>
+                    {sub.topics?.length > 0 && (
+                      <div style={{ fontSize: 12, color: on ? `${T.acc}BB` : T.textDim, paddingLeft: 26, lineHeight: 1.7 }}>
+                        {sub.topics.join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Card count */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+          <div style={{ fontSize: 12, color: T.textDim, flexShrink: 0 }}>Karten:</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[10, 20, 30, 50].map(n => (
+              <button key={n} onClick={() => setCount(n)} style={{
+                padding: '5px 12px', borderRadius: T.r, fontSize: 13, fontWeight: 600,
+                border: `1px solid ${count === n ? T.acc : T.border}`,
+                background: count === n ? T.accDim : T.s3,
+                color: count === n ? T.acc : T.textSub, cursor: 'pointer',
+              }}>{n}</button>
+            ))}
           </div>
-          <div style={{ maxHeight: 320, overflowY: 'auto', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {preview.map((c, i) => (
-              <div key={i} style={{ background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                {c.emoji && <span style={{ fontSize: 22, flexShrink: 0 }}>{c.emoji}</span>}
+        </div>
+
+        {genErr && <div style={{ fontSize: 13, color: T.red, padding: '10px 14px', background: T.redDim, borderRadius: T.r, marginBottom: 14 }}>{genErr}</div>}
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Btn onClick={generateCards} disabled={selCount === 0} full style={{ padding: '11px' }}>
+            ✦ {count} Karten für {selCount} {selCount === 1 ? 'Fach' : 'Fächer'} generieren
+          </Btn>
+          <Btn onClick={onClose} variant="secondary" style={{ padding: '11px 14px', flexShrink: 0 }}>Abbrechen</Btn>
+        </div>
+      </Modal>
+    )
+  }
+
+  // ── PREVIEW ──────────────────────────────────────────────────────────────────
+  const bySubject = preview.reduce((acc, c) => {
+    const k = c.subject || 'Sonstiges'
+    if (!acc[k]) acc[k] = []
+    acc[k].push(c)
+    return acc
+  }, {})
+
+  return (
+    <Modal onClose={onClose} width={560}>
+      {headerInfo}
+      <div style={{ fontSize: 13, color: T.textSub, marginBottom: 14 }}>
+        <strong style={{ color: T.text }}>{preview.length} Karten</strong> für {Object.keys(bySubject).length} Fächer generiert
+      </div>
+      <div style={{ maxHeight: 360, overflowY: 'auto', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {Object.entries(bySubject).map(([subj, cards]) => (
+          <div key={subj}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.acc, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>{subj} ({cards.length})</div>
+            {cards.map((c, i) => (
+              <div key={i} style={{ background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                {c.emoji && <span style={{ fontSize: 18, flexShrink: 0 }}>{c.emoji}</span>}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{c.front}</div>
-                  <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{c.front}</div>
+                  <div style={{ fontSize: 12, color: T.textSub }}>
                     {lang === 'de+en' ? `🇩🇪 ${c.back_de}  ·  🇬🇧 ${c.back_en}` : c.back}
                   </div>
                 </div>
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Btn onClick={saveAll} disabled={saving} full style={{ padding: '11px' }} variant="success">
-              {saving ? 'Speichert…' : `✓ ${preview.length} Karten speichern`}
-            </Btn>
-            <Btn onClick={() => setPreview(null)} variant="secondary" style={{ padding: '11px 14px', flexShrink: 0 }}>Neu generieren</Btn>
-          </div>
-        </>
-      )}
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <Btn onClick={saveAll} disabled={saving} full style={{ padding: '11px' }} variant="success">
+          {saving ? 'Speichert…' : `✓ ${preview.length} Karten speichern`}
+        </Btn>
+        <Btn onClick={() => setPhase('overview')} variant="secondary" style={{ padding: '11px 14px', flexShrink: 0 }}>Neu generieren</Btn>
+      </div>
     </Modal>
   )
 }
@@ -2873,7 +3016,11 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
           </Btn>
         </SectionCard>
 
-        <SectionCard label="👥 Partner verbinden">
+        <SectionCard label="👥 Partner in Katara">
+          <div style={{ fontSize: 12, color: T.textDim, marginBottom: 14, lineHeight: 1.6 }}>
+            Katara-Partner ist unabhängig von Vocara und kann hier separat gesetzt werden.
+            Wenn du in Vocara bereits einen Partner verbunden hast, wird er beim nächsten Login automatisch übernommen.
+          </div>
           {partnerChecking ? (
             <div style={{ fontSize: 13, color: T.textDim }}>Wird geladen…</div>
           ) : currentPartner ? (
@@ -3269,7 +3416,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
       </div>
 
       {modal       && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
-      {schoolSetup && <SchoolSetupModal onConfirm={(grade, lang) => { create('Schule', 'purple', { schoolMode: true, schoolGrade: grade, schoolLang: lang }); setSchoolSetup(false) }} onClose={() => setSchoolSetup(false)} />}
+      {schoolSetup && <SchoolSetupModal onConfirm={(grade, lang, country) => { create('Schule', 'purple', { schoolMode: true, schoolGrade: grade, schoolLang: lang, schoolCountry: country }); setSchoolSetup(false) }} onClose={() => setSchoolSetup(false)} />}
       {renaming    && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {shareTarget && activeTip === 'teilen' && <TipModal tipKey="teilen" onClose={() => setActiveTip(null)} />}
       {shareTarget && activeTip !== 'teilen' && <ShareModal catName={shareTarget.name} partnerName={partnerInfo?.name || 'Partner'} sharing={sharing} onConfirm={shareWithPartner} onClose={() => setShareTarget(null)} />}
@@ -3764,6 +3911,22 @@ export default function App() {
     getDoc(doc(db, `users/${user.uid}/settings/preferences`))
       .then(snap => { if (snap.exists()) setSettings(snap.data()) })
       .catch(() => {})
+  }, [user?.uid])
+
+  // Auto-create 4 starter categories on first login (if user has none)
+  useEffect(() => {
+    if (!user) return
+    const catRef = collection(db, `users/${user.uid}/categories`)
+    getDocs(query(catRef, limit(1))).then(snap => {
+      if (!snap.empty) return // already initialized
+      const starters = [
+        { name: 'Beruf',   color: 'blue'   },
+        { name: 'Schule',  color: 'purple', schoolMode: true, schoolGrade: 'Klasse 1', schoolLang: 'de', schoolCountry: 'de' },
+        { name: 'Studium', color: 'green'  },
+        { name: 'Hobby',   color: 'amber'  },
+      ]
+      Promise.all(starters.map(s => addDoc(catRef, { ...s, createdAt: serverTimestamp() }))).catch(() => {})
+    }).catch(() => {})
   }, [user?.uid])
 
   // Register user email in public index so partners can find each other by email
