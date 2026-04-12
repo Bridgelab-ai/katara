@@ -475,7 +475,7 @@ const Modal = ({ children, onClose, width = 480 }) => (
 )
 
 // ─── LOGO ─────────────────────────────────────────────────────────────────────
-const Logo = ({ size = 26 }) => (
+const Logo = ({ size = 26, subtitle = false }) => (
   <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
     <div style={{
       fontSize: size,
@@ -488,9 +488,14 @@ const Logo = ({ size = 26 }) => (
     }}>
       Katara
     </div>
-    <div style={{ fontSize: Math.max(8, size * 0.31), color: T.textDim, letterSpacing: 1.8, marginTop: 2 }}>
-      BY BRIDGELAB
-    </div>
+    {subtitle
+      ? <div style={{ fontSize: Math.max(8, size * 0.38), color: T.textSub, letterSpacing: 0.2, marginTop: 2, fontWeight: 500 }}>
+          Strukturiertes Lernen.
+        </div>
+      : <div style={{ fontSize: Math.max(8, size * 0.31), color: T.textDim, letterSpacing: 1.8, marginTop: 2 }}>
+          BY BRIDGELAB
+        </div>
+    }
   </div>
 )
 
@@ -526,7 +531,7 @@ const Breadcrumb = ({ crumbs, onNavigate }) => (
 )
 
 // ─── STICKY HEADER ────────────────────────────────────────────────────────────
-const Header = ({ crumbs, onBack, right, title, onNavigate }) => {
+const Header = ({ crumbs, onBack, right, title, onNavigate, showSubtitle = false }) => {
   const t = useT()
   return (
   <div style={{
@@ -552,7 +557,7 @@ const Header = ({ crumbs, onBack, right, title, onNavigate }) => {
         onMouseLeave={e => e.currentTarget.style.color = T.textDim}
       >← Bridgelab</a>
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-        <Logo size={19} />
+        <Logo size={19} subtitle={showSubtitle} />
       </div>
       <div style={{ width: 72, flexShrink: 0 }} />
     </div>
@@ -1278,11 +1283,17 @@ const CardModal = ({ initial, onSave, onClose }) => {
 // ─── KI IMPORT SCREEN ─────────────────────────────────────────────────────────
 // destinations: [{ label, path }] — if omitted, saves everything to cardsPath
 const LEHRPLAN_OPTIONS = [
-  { id: 'abitur',    label: 'Abitur',          prompt: 'Generate 15 flashcards for the German Abitur exam. Cover the most important exam-relevant topics across core subjects. Focus on definitions, formulas, and key concepts students must know.' },
-  { id: 'ihk',       label: 'IHK-Prüfung',     prompt: 'Generate 15 flashcards for the German IHK (Industrie- und Handelskammer) exam. Cover business, economics, law, and professional topics relevant for apprenticeship exams in Germany.' },
-  { id: 'fuehrerschein', label: 'Führerschein', prompt: 'Generate 15 flashcards for the German Führerschein (driving license) theory exam. Cover traffic rules, signs, right-of-way rules, and safety regulations as per German StVO.' },
-  { id: 'zugfuehrer', label: 'Zugführer DB',    prompt: 'Generate 15 flashcards for the Deutsche Bahn Zugführer (train driver/conductor) certification. Cover RiL 301 signals, safety protocols, emergency procedures, and train operations.' },
-  { id: 'custom',    label: 'Eigene Eingabe',   prompt: null },
+  { id: 'abitur',        label: 'Abitur' },
+  { id: 'ihk',           label: 'IHK-Prüfung' },
+  { id: 'fuehrerschein', label: 'Führerschein' },
+  { id: 'zugfuehrer',    label: 'Zugführer DB' },
+  { id: 'custom',        label: 'Eigene Eingabe' },
+]
+const LEHRPLAN_COUNTRIES = [
+  { id: 'Deutschland', label: '🇩🇪 Deutschland' },
+  { id: 'Österreich',  label: '🇦🇹 Österreich' },
+  { id: 'Schweiz',     label: '🇨🇭 Schweiz' },
+  { id: 'Andere',      label: '🌍 Andere' },
 ]
 
 const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCreateSub }) => {
@@ -1299,9 +1310,10 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
   const [dragIdx,     setDragIdx]     = useState(null)
   const [subSuggestions, setSubSuggestions] = useState([]) // suggested folder names
   const [subDismissed,   setSubDismissed]   = useState(false)
-  const [lehrplanOpen,   setLehrplanOpen]   = useState(false)
-  const [lehrplanSel,    setLehrplanSel]    = useState(null)
-  const [lehrplanCustom, setLehrplanCustom] = useState('')
+  const [lehrplanOpen,    setLehrplanOpen]    = useState(false)
+  const [lehrplanSel,     setLehrplanSel]     = useState(null)
+  const [lehrplanCustom,  setLehrplanCustom]  = useState('')
+  const [lehrplanCountry, setLehrplanCountry] = useState('Deutschland')
   const fileRef = useRef(null)
 
   const addFiles = newFiles => {
@@ -1426,20 +1438,19 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
     if (!opt) return
     const customTopic = lehrplanCustom.trim()
     if (opt.id === 'custom' && !customTopic) return
+    const label = opt.id === 'custom' ? customTopic : opt.label
+    const year  = new Date().getFullYear()
     setLoading(true); setError(''); setPreview(null); setLehrplanOpen(false)
     try {
-      const promptText = opt.id === 'custom'
-        ? `You are an expert teacher. Generate 15 flashcards based on the official curriculum and exam requirements for: "${customTopic}" in Germany. Cards should cover the most important exam-relevant topics. Return ONLY JSON: [{"front":"...","back":"...","backShort":"..."}]`
-        : `You are an expert teacher. ${opt.prompt} Return ONLY JSON array: [{"front":"...","back":"...","backShort":"..."}]`
-      console.log('[KI Lehrplan] Generating for:', opt.label, customTopic)
+      console.log('[KI Lehrplan] Step 1+2 via API — topic:', label, 'country:', lehrplanCountry)
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001', max_tokens: 4000,
-          messages: [{ role: 'user', content: promptText }],
+          lehrplan: { topic: opt.id, label, country: lehrplanCountry, year },
         }),
       })
+      console.log('[KI Lehrplan] response status:', res.status)
       const data = await res.json()
       if (data.error) throw new Error(`API-Fehler: ${data.error.message || JSON.stringify(data.error)}`)
       const raw = data.content?.[0]?.text || ''
@@ -1628,6 +1639,27 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
                     marginTop: 8, background: T.s1, border: `1px solid ${T.border}`,
                     borderRadius: T.r2, overflow: 'hidden',
                   }}>
+                    {/* Country picker */}
+                    <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.border}`, background: T.s2 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1, marginBottom: 8 }}>LAND</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {LEHRPLAN_COUNTRIES.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => setLehrplanCountry(c.id)}
+                            style={{
+                              padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                              background: lehrplanCountry === c.id ? T.acc : T.s3,
+                              color: lehrplanCountry === c.id ? '#fff' : T.textSub,
+                              border: `1px solid ${lehrplanCountry === c.id ? T.acc : T.border}`,
+                              cursor: 'pointer', transition: 'all 0.12s',
+                            }}
+                          >{c.label}</button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Topic list */}
                     {LEHRPLAN_OPTIONS.map(opt => (
                       <div key={opt.id}>
                         <button
@@ -1660,13 +1692,22 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
                         )}
                       </div>
                     ))}
+
+                    {/* Info + generate */}
+                    {lehrplanSel && (
+                      <div style={{ padding: '10px 16px', background: T.accDim, borderBottom: `1px solid ${T.border}` }}>
+                        <div style={{ fontSize: 11, color: T.acc }}>
+                          ✦ KI sucht zuerst den aktuellen offiziellen Lehrplan ({lehrplanCountry}, {new Date().getFullYear()}), dann werden Karten generiert.
+                        </div>
+                      </div>
+                    )}
                     <div style={{ padding: '12px 16px', background: T.s1 }}>
                       <Btn
                         onClick={generateFromLehrplan}
                         disabled={!lehrplanSel || (lehrplanSel === 'custom' && !lehrplanCustom.trim()) || loading}
                         full style={{ padding: '10px', fontSize: 14 }}
                       >
-                        {loading ? 'Generiert…' : '✦ Karten generieren'}
+                        {loading ? <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> Lehrplan wird gesucht…</> : '✦ Karten generieren'}
                       </Btn>
                     </div>
                   </div>
@@ -3555,7 +3596,7 @@ Return ONLY a valid JSON array, no markdown:
             onMouseLeave={e => e.currentTarget.style.color = T.textDim}
           >← Bridgelab</a>
           <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-            <Logo size={21} />
+            <Logo size={21} subtitle />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
             <span style={{ fontSize: 12, color: T.textDim }}>
