@@ -177,8 +177,20 @@ const enrichCategoryData = async (uid, catId) => {
     const lastStudied = allLasts.length > 0
       ? allLasts.reduce((a, b) => ((a?.seconds || 0) > (b?.seconds || 0) ? a : b))
       : null
-    return { groupCount: subcatIds.length, cardCount, lastStudied }
-  } catch { return { groupCount: 0, cardCount: 0, lastStudied: null } }
+    // count mastered cards (mastery >= 2)
+    const countMastered = async (colPath) => {
+      try {
+        const snap = await getDocs(collection(db, colPath))
+        return snap.docs.filter(d => (d.data().mastery || 0) >= 2).length
+      } catch { return 0 }
+    }
+    const [directMastered, ...subcatMastered] = await Promise.all([
+      countMastered(`${catPath}/cards`),
+      ...subcatIds.map(sid => countMastered(`${catPath}/subcategories/${sid}/cards`)),
+    ])
+    const masteredCount = directMastered + subcatMastered.reduce((a, b) => a + b, 0)
+    return { groupCount: subcatIds.length, cardCount, lastStudied, masteredCount }
+  } catch { return { groupCount: 0, cardCount: 0, lastStudied: null, masteredCount: 0 } }
 }
 
 // ─── GLOBAL STATS ─────────────────────────────────────────────────────────────
@@ -854,8 +866,9 @@ const SectionLabel = ({ children }) => (
 const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExport, onSendToPartner }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
-  const groupCount = item._count ?? 0
-  const cardCount  = item._cardCount ?? 0
+  const groupCount   = item._count ?? 0
+  const cardCount    = item._cardCount ?? 0
+  const masteredCount = item._masteredCount ?? 0
   const color = catColor(item.color || 'blue')
   const colorDim = `${color}1A`
 
@@ -905,6 +918,18 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
           )}
         </div>
       </div>
+
+      {/* Progress bar */}
+      {cardCount > 0 && (
+        <div style={{ marginTop: 2 }}>
+          <div style={{ height: 4, borderRadius: 2, background: T.border, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${Math.round((masteredCount / cardCount) * 100)}%`, background: color, borderRadius: 2, transition: 'width 0.3s' }} />
+          </div>
+          <div style={{ fontSize: 11, color: T.textDim, marginTop: 3 }}>
+            {masteredCount}/{cardCount} gemeistert
+          </div>
+        </div>
+      )}
 
       {/* Last studied */}
       {(item._lastStudied || item.updatedAt) && (
@@ -1018,10 +1043,64 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
 }
 
 // ─── CARD LIST ITEM ───────────────────────────────────────────────────────────
-const CardItem = ({ card, onEdit, onDelete, onMove, onSendToPartner }) => {
-  const [hov, setHov] = useState(false)
+const CardItem = ({ card, onSave, onDelete, onMove, onSendToPartner }) => {
+  const [hov,     setHov]     = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [front,   setFront]   = useState(card.front || '')
+  const [back,    setBack]    = useState(card.back || '')
+  const [backShort, setBackShort] = useState(card.backShort || '')
+  const [saving,  setSaving]  = useState(false)
   const m = card.mastery || 0
   const mColor = m >= 3 ? T.green : m >= 2 ? T.acc : m >= 1 ? T.red : T.textDim
+
+  const handleSave = async () => {
+    setSaving(true)
+    await onSave({ front, back, backShort })
+    setSaving(false)
+    setEditing(false)
+  }
+
+  const inputStyle = {
+    width: '100%', background: T.s1, border: `1px solid ${T.border}`,
+    borderRadius: T.r, color: T.text, fontSize: 13, padding: '6px 10px',
+    outline: 'none', boxSizing: 'border-box',
+  }
+
+  if (editing) {
+    return (
+      <div style={{
+        background: T.s3, border: `1px solid ${T.acc}44`,
+        borderLeft: `3px solid ${T.acc}`, borderRadius: T.r2,
+        padding: '12px 14px', marginBottom: 8,
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 10 }}>
+          <input
+            style={inputStyle} value={front} placeholder="Vorderseite"
+            onChange={e => setFront(e.target.value)}
+            autoFocus
+          />
+          <input
+            style={inputStyle} value={back} placeholder="Rückseite"
+            onChange={e => setBack(e.target.value)}
+          />
+          <input
+            style={inputStyle} value={backShort} placeholder="Kurzbez. (optional)"
+            onChange={e => setBackShort(e.target.value)}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={handleSave} disabled={saving}
+            style={{ background: T.acc, border: 'none', borderRadius: T.r, color: '#fff', fontSize: 13, fontWeight: 600, padding: '6px 16px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
+          >{saving ? 'Speichert…' : 'Speichern'}</button>
+          <button
+            onClick={() => { setEditing(false); setFront(card.front || ''); setBack(card.back || ''); setBackShort(card.backShort || '') }}
+            style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r, color: T.textSub, fontSize: 13, padding: '6px 14px', cursor: 'pointer' }}
+          >Abbrechen</button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -1069,7 +1148,7 @@ const CardItem = ({ card, onEdit, onDelete, onMove, onSendToPartner }) => {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         {m > 0 && <Badge color={mColor}>{['','✗','✓','★'][m] || m}</Badge>}
         <button
-          onClick={e => { e.stopPropagation(); onEdit() }}
+          onClick={e => { e.stopPropagation(); setEditing(true) }}
           title="Bearbeiten"
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textSub, fontSize: 14, padding: '4px 6px', borderRadius: 5, transition: 'color 0.12s' }}
           onMouseEnter={e => e.currentTarget.style.color = T.acc}
@@ -2033,7 +2112,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     if (idx + 1 >= session.length) {
       setPhase('result')
       fetchWrongTips(newResults.filter(r => !r.knew))
-      const durationMinutes = Math.max(1, Math.round((Date.now() - (sessionStartRef.current || Date.now())) / 60000))
+      const durationMinutes = Math.round((Date.now() - (sessionStartRef.current || Date.now())) / 1000) / 60
       updateGlobalStats(uid, newResults.length, durationMinutes)
     } else {
       setIdx(i => i + 1)
@@ -2703,7 +2782,7 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
     } catch (_) {}
     const newResults = [...results, { card, knew }]
     if (idx + 1 >= session.length) {
-      const mins = Math.max(1, Math.round((Date.now() - sessionStart.current) / 60000))
+      const mins = Math.round((Date.now() - sessionStart.current) / 1000) / 60
       updateGlobalStats(uid, newResults.length, mins)
       setResults(newResults)
       setPhase('done')
@@ -3184,8 +3263,8 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
     const docs = await loadDocs(path)
     const enriched = await Promise.all(
       docs.map(async d => {
-        const { groupCount, cardCount, lastStudied } = await enrichCategoryData(uid, d.id)
-        return { ...d, _count: groupCount, _cardCount: cardCount, _lastStudied: lastStudied }
+        const { groupCount, cardCount, lastStudied, masteredCount } = await enrichCategoryData(uid, d.id)
+        return { ...d, _count: groupCount, _cardCount: cardCount, _lastStudied: lastStudied, _masteredCount: masteredCount }
       })
     )
     setItems(enriched)
@@ -3639,7 +3718,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
               </Btn>
             </div>
             {cards.map(c => (
-              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
+              <CardItem key={c.id} card={c} onSave={async data => { await updateDoc(doc(db, `${cardsPath}/${c.id}`), data); load() }} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
             ))}
           </div>
         )}
@@ -3807,7 +3886,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
               </Btn>
             </div>
             {cards.map(c => (
-              <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
+              <CardItem key={c.id} card={c} onSave={async data => { await updateDoc(doc(db, `${cardsPath}/${c.id}`), data); load() }} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
             ))}
           </div>
         )}
@@ -3936,7 +4015,7 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
           </Empty>
         ) : cards.map(c => (
-          <CardItem key={c.id} card={c} onEdit={() => setCardModal(c)} onDelete={() => remove(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
+          <CardItem key={c.id} card={c} onSave={async data => { await updateDoc(doc(db, `${cardsPath}/${c.id}`), data); load() }} onDelete={() => remove(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
         ))}
       </div>
 

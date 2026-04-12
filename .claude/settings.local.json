@@ -6,7 +6,9 @@
       "Bash(npm run:*)",
       "Bash(npx vite:*)",
       "Bash(npx --yes acorn --ecma2020 --module src/App.jsx)",
-      "Bash(npx acorn:*)"
+      "Bash(npx acorn:*)",
+      "Bash(npm install:*)",
+      "Bash(node -e \"require\\('vite-plugin-pwa'\\)\")"
     ]
   }
 }
