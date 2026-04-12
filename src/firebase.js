@@ -3,12 +3,12 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDbsPiyIWinQerxON937oiz8Vi-LxI4boQ",
-  authDomain: "katara-bridgelab.firebaseapp.com",
-  projectId: "katara-bridgelab",
-  storageBucket: "katara-bridgelab.firebasestorage.app",
-  messagingSenderId: "830826638028",
-  appId: "1:830826638028:web:f9e49e6ce99dcebe09b069"
+  apiKey: "AIzaSyD8R7oHIw9HvviqprAnfPgDmHtkUDy3vzI",
+  authDomain: "vocara-ca2b7.firebaseapp.com",
+  projectId: "vocara-ca2b7",
+  storageBucket: "vocara-ca2b7.firebasestorage.app",
+  messagingSenderId: "609285831853",
+  appId: "1:609285831853:web:dbd5a9d06ce5663ecfda24"
 };
 
 const app = initializeApp(firebaseConfig);

@@ -3169,9 +3169,10 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
   const [movingCat,   setMovingCat]   = useState(null) // item being moved
   const [moving,      setMoving]      = useState(false)
   const [exportData,  setExportData]  = useState(null) // { cards, name }
-  const [activeTip,   setActiveTip]   = useState(null)
-  const [schoolSetup, setSchoolSetup] = useState(false)
-  const { dismissed, dismiss }        = useTips()
+  const [activeTip,    setActiveTip]   = useState(null)
+  const [schoolSetup,  setSchoolSetup] = useState(false)
+  const [quickLoading, setQuickLoading] = useState(null) // label of chip being loaded
+  const { dismissed, dismiss }         = useTips()
   const { partnerUid, partnerName }   = usePartner()
   const partnerInfo = partnerUid ? { uid: partnerUid, name: partnerName } : null
   const t    = useT()
@@ -3201,6 +3202,56 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
       console.error('[Katara] createCategory — addDoc failed:', err)
     }
   }
+
+  const KI_PROMPTS = {
+    Beruf:   'Generate 10 practical starter flashcards for professional development and workplace skills in German. Cover job-relevant vocabulary, processes, and key concepts. Mix of difficulty.',
+    Studium: 'Generate 10 starter flashcards for university students in German. Cover study skills, academic vocabulary, and general knowledge useful at university.',
+    Hobby:   'Generate 10 starter flashcards for hobbies and leisure activities in German. Fun, practical vocabulary, activity names, and helpful tips.',
+  }
+
+  const createWithKI = async (label, color, extra = {}) => {
+    setQuickLoading(label)
+    try {
+      // 1. Create category
+      const ref = await addDoc(collection(db, path), {
+        name: label, color: color || 'blue', ...extra,
+        createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+      })
+      const newCat = { id: ref.id, name: label, color: color || 'blue', ...extra }
+
+      // 2. Generate starter cards
+      const prompt = `${KI_PROMPTS[label] || `Generate 10 starter flashcards for a ${label} learner in German. Mix of practical, useful cards.`}
+Return ONLY a valid JSON array, no markdown:
+[{"front":"...","back":"...","backShort":"..."}]`
+      const res = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1500, messages: [{ role: 'user', content: prompt }] }),
+      })
+      const data = await res.json()
+      const raw  = data.content?.[0]?.text || ''
+      const m    = raw.match(/\[[\s\S]*\]/)
+      if (m) {
+        const cards = JSON.parse(m[0])
+        const cardsPath = `${path}/${ref.id}/cards`
+        for (const c of Array.isArray(cards) ? cards : []) {
+          await addDoc(collection(db, cardsPath), {
+            front: c.front || '', back: c.back || '', backShort: c.backShort || '',
+            back_de: '', back_en: '', emoji: '',
+            image: null, correctCount: 0, wrongCount: 0,
+            mastery: 0, lastReviewed: null, createdAt: serverTimestamp(),
+          })
+        }
+      }
+
+      // 3. Navigate into the new category
+      setQuickLoading(null)
+      onOpen(newCat)
+    } catch (_) {
+      setQuickLoading(null)
+      load()
+    }
+  }
+
   const remove = async id => {
     if (!confirm('Kategorie und alle Inhalte löschen?')) return
     await deleteDoc(doc(db, `${path}/${id}`)); load()
@@ -3351,27 +3402,35 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
             <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 8 }}>Schnellstart</div>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
               {[
-                { icon: '💼', label: 'Beruf', color: 'blue' },
-                { icon: '🎓', label: 'Schule', color: 'purple' },
-                { icon: '📖', label: 'Studium', color: 'green' },
-                { icon: '🎯', label: 'Hobby', color: 'amber' },
-              ].map(({ icon, label, color }) => (
-                <button
-                  key={label}
-                  onClick={() => label === 'Schule' ? setSchoolSetup(true) : create(label, color)}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '6px 14px', borderRadius: 20, flexShrink: 0,
-                    background: T.s2, border: `1px solid ${T.border}`,
-                    color: T.textSub, fontSize: 13, fontWeight: 600,
-                    cursor: 'pointer', transition: 'all 0.12s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = T.s3; e.currentTarget.style.color = T.text; e.currentTarget.style.borderColor = T.borderHov }}
-                  onMouseLeave={e => { e.currentTarget.style.background = T.s2; e.currentTarget.style.color = T.textSub; e.currentTarget.style.borderColor = T.border }}
-                >
-                  <span>{icon}</span>{label}
-                </button>
-              ))}
+                { icon: '💼', label: 'Beruf',   color: 'blue'   },
+                { icon: '🎓', label: 'Schule',  color: 'purple' },
+                { icon: '📖', label: 'Studium', color: 'green'  },
+                { icon: '🎯', label: 'Hobby',   color: 'amber'  },
+              ].map(({ icon, label, color }) => {
+                const isLoading = quickLoading === label
+                return (
+                  <button
+                    key={label}
+                    disabled={!!quickLoading}
+                    onClick={() => label === 'Schule' ? setSchoolSetup(true) : createWithKI(label, color)}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '6px 14px', borderRadius: 20, flexShrink: 0,
+                      background: isLoading ? T.accDim : T.s2,
+                      border: `1px solid ${isLoading ? T.acc : T.border}`,
+                      color: isLoading ? T.acc : T.textSub,
+                      fontSize: 13, fontWeight: 600,
+                      cursor: quickLoading ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.12s', opacity: quickLoading && !isLoading ? 0.45 : 1,
+                    }}
+                    onMouseEnter={e => { if (!quickLoading) { e.currentTarget.style.background = T.s3; e.currentTarget.style.color = T.text; e.currentTarget.style.borderColor = T.borderHov } }}
+                    onMouseLeave={e => { if (!quickLoading) { e.currentTarget.style.background = T.s2; e.currentTarget.style.color = T.textSub; e.currentTarget.style.borderColor = T.border } }}
+                  >
+                    {isLoading ? <span style={{ fontSize: 11 }}>✦</span> : <span>{icon}</span>}
+                    {isLoading ? 'Generiert…' : label}
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}
@@ -3405,7 +3464,19 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
       </div>
 
       {modal       && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
-      {schoolSetup && <SchoolSetupModal onConfirm={(grade, lang, country) => { create('Schule', 'purple', { schoolMode: true, schoolGrade: grade, schoolLang: lang, schoolCountry: country }); setSchoolSetup(false) }} onClose={() => setSchoolSetup(false)} />}
+      {schoolSetup && <SchoolSetupModal onConfirm={async (grade, lang, country) => {
+        setSchoolSetup(false)
+        setQuickLoading('Schule')
+        try {
+          const ref = await addDoc(collection(db, path), {
+            name: 'Schule', color: 'purple',
+            schoolMode: true, schoolGrade: grade, schoolLang: lang, schoolCountry: country,
+            createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+          })
+          setQuickLoading(null)
+          onOpen({ id: ref.id, name: 'Schule', color: 'purple', schoolMode: true, schoolGrade: grade, schoolLang: lang, schoolCountry: country })
+        } catch (_) { setQuickLoading(null); load() }
+      }} onClose={() => setSchoolSetup(false)} />}
       {renaming    && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {shareTarget && activeTip === 'teilen' && <TipModal tipKey="teilen" onClose={() => setActiveTip(null)} />}
       {shareTarget && activeTip !== 'teilen' && <ShareModal catName={shareTarget.name} partnerName={partnerInfo?.name || 'Partner'} sharing={sharing} onConfirm={shareWithPartner} onClose={() => setShareTarget(null)} />}
