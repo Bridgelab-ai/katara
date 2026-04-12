@@ -1277,6 +1277,14 @@ const CardModal = ({ initial, onSave, onClose }) => {
 
 // ─── KI IMPORT SCREEN ─────────────────────────────────────────────────────────
 // destinations: [{ label, path }] — if omitted, saves everything to cardsPath
+const LEHRPLAN_OPTIONS = [
+  { id: 'abitur',    label: 'Abitur',          prompt: 'Generate 15 flashcards for the German Abitur exam. Cover the most important exam-relevant topics across core subjects. Focus on definitions, formulas, and key concepts students must know.' },
+  { id: 'ihk',       label: 'IHK-Prüfung',     prompt: 'Generate 15 flashcards for the German IHK (Industrie- und Handelskammer) exam. Cover business, economics, law, and professional topics relevant for apprenticeship exams in Germany.' },
+  { id: 'fuehrerschein', label: 'Führerschein', prompt: 'Generate 15 flashcards for the German Führerschein (driving license) theory exam. Cover traffic rules, signs, right-of-way rules, and safety regulations as per German StVO.' },
+  { id: 'zugfuehrer', label: 'Zugführer DB',    prompt: 'Generate 15 flashcards for the Deutsche Bahn Zugführer (train driver/conductor) certification. Cover RiL 301 signals, safety protocols, emergency procedures, and train operations.' },
+  { id: 'custom',    label: 'Eigene Eingabe',   prompt: null },
+]
+
 const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCreateSub }) => {
   const destList = destinations.length > 0 ? destinations : [{ label: 'Hier', path: cardsPath }]
 
@@ -1291,6 +1299,9 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
   const [dragIdx,     setDragIdx]     = useState(null)
   const [subSuggestions, setSubSuggestions] = useState([]) // suggested folder names
   const [subDismissed,   setSubDismissed]   = useState(false)
+  const [lehrplanOpen,   setLehrplanOpen]   = useState(false)
+  const [lehrplanSel,    setLehrplanSel]    = useState(null)
+  const [lehrplanCustom, setLehrplanCustom] = useState('')
   const fileRef = useRef(null)
 
   const addFiles = newFiles => {
@@ -1307,6 +1318,26 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
     return '📝'
   }
 
+  const parseCards = (raw) => {
+    console.log('[KI] Raw response length:', raw.length)
+    console.log('[KI] Raw response (first 500):', raw.slice(0, 500))
+    // strip markdown fences
+    let cleaned = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
+    const match = cleaned.match(/\[[\s\S]*\]/)
+    if (!match) {
+      console.error('[KI] No JSON array found in response:', raw)
+      throw new Error(`KI hat kein JSON zurückgegeben.\n\nAntwort: ${raw.slice(0, 300)}`)
+    }
+    try {
+      const parsed = JSON.parse(match[0])
+      console.log('[KI] Parsed', parsed.length, 'cards')
+      return parsed
+    } catch (e) {
+      console.error('[KI] JSON.parse failed:', e.message, '\nRaw match:', match[0].slice(0, 300))
+      throw new Error(`JSON-Fehler: ${e.message}\n\nRaw: ${match[0].slice(0, 200)}`)
+    }
+  }
+
   const generate = async () => {
     if (files.length === 0 && !instr.trim()) return
     setLoading(true); setError(''); setPreview(null)
@@ -1315,15 +1346,25 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
 
       for (const file of files) {
         const ext = file.name.split('.').pop().toLowerCase()
+        console.log('[KI] Processing file:', file.name, 'ext:', ext, 'size:', file.size)
+
         if (['jpg','jpeg','png','gif','webp'].includes(ext)) {
           const b64 = await toBase64(file)
           content.push({ type: 'image', source: { type: 'base64', media_type: file.type || 'image/jpeg', data: b64.split(',')[1] } })
+          console.log('[KI] Added image block')
         } else if (ext === 'pdf') {
-          const b64 = await toBase64(file)
-          content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64.split(',')[1] } })
+          console.log('[KI] Reading PDF as ArrayBuffer…')
+          const arrayBuf = await file.arrayBuffer()
+          const bytes = new Uint8Array(arrayBuf)
+          let binary = ''
+          for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+          const b64 = btoa(binary)
+          content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } })
+          console.log('[KI] Added PDF document block, base64 length:', b64.length)
         } else {
           const text = await toText(file)
           content.push({ type: 'text', text: `--- ${file.name} ---\n${text.slice(0, 14000)}` })
+          console.log('[KI] Added text block, chars:', text.length)
         }
       }
 
@@ -1338,20 +1379,21 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
         : '[{"front":"...","back":"...","backShort":"..."}]'
       content.push({
         type: 'text',
-        text: `${instrPart}Create flashcards from the above content.${sortPart}${pronunciationPart}\n\nReturn ONLY a valid JSON array, no markdown, no explanation:\n${jsonExample}`,
+        text: `${instrPart}Create flashcards from the above content.${sortPart}${pronunciationPart}\nReturn ONLY a valid JSON array. No markdown. No backticks. Start with [ and end with ]:\n${jsonExample}`,
       })
 
+      console.log('[KI] Sending', content.length, 'content blocks to API')
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-opus-4-6', max_tokens: 4096, messages: [{ role: 'user', content }] }),
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 4000, messages: [{ role: 'user', content }] }),
       })
+      console.log('[KI] API response status:', res.status)
       const data = await res.json()
+      if (data.error) throw new Error(`API-Fehler: ${data.error.message || JSON.stringify(data.error)}`)
       const raw = data.content?.[0]?.text || ''
-      const match = raw.match(/\[[\s\S]*\]/)
-      if (!match) throw new Error('KI hat kein gültiges JSON zurückgegeben. Versuche eine genauere Anweisung.')
-      const cards = JSON.parse(match[0])
-      if (!Array.isArray(cards) || cards.length === 0) throw new Error('Keine Karten gefunden.')
+      const cards = parseCards(raw)
+      if (!Array.isArray(cards) || cards.length === 0) throw new Error('Keine Karten in der Antwort gefunden.')
       setPreview(cards.map(c => ({ ...c, _dest: destList[0].path })))
       setSubDismissed(false)
       // Ask KI for subcategory suggestions (fire-and-forget, non-blocking)
@@ -1365,11 +1407,48 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
         const txt = d.content?.[0]?.text || ''
         const m = txt.match(/\[[\s\S]*?\]/)
         if (m) {
-          const names = JSON.parse(m[0]).filter(n => typeof n === 'string' && n.trim())
-          if (names.length > 0) setSubSuggestions(names.slice(0, 3))
+          try {
+            const names = JSON.parse(m[0]).filter(n => typeof n === 'string' && n.trim())
+            if (names.length > 0) setSubSuggestions(names.slice(0, 3))
+          } catch (_) {}
         }
       }).catch(() => {})
     } catch (e) {
+      console.error('[KI] generate error:', e)
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const generateFromLehrplan = async () => {
+    const opt = LEHRPLAN_OPTIONS.find(o => o.id === lehrplanSel)
+    if (!opt) return
+    const customTopic = lehrplanCustom.trim()
+    if (opt.id === 'custom' && !customTopic) return
+    setLoading(true); setError(''); setPreview(null); setLehrplanOpen(false)
+    try {
+      const promptText = opt.id === 'custom'
+        ? `You are an expert teacher. Generate 15 flashcards based on the official curriculum and exam requirements for: "${customTopic}" in Germany. Cards should cover the most important exam-relevant topics. Return ONLY JSON: [{"front":"...","back":"...","backShort":"..."}]`
+        : `You are an expert teacher. ${opt.prompt} Return ONLY JSON array: [{"front":"...","back":"...","backShort":"..."}]`
+      console.log('[KI Lehrplan] Generating for:', opt.label, customTopic)
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001', max_tokens: 4000,
+          messages: [{ role: 'user', content: promptText }],
+        }),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(`API-Fehler: ${data.error.message || JSON.stringify(data.error)}`)
+      const raw = data.content?.[0]?.text || ''
+      const cards = parseCards(raw)
+      if (!Array.isArray(cards) || cards.length === 0) throw new Error('Keine Karten in der Antwort gefunden.')
+      setPreview(cards.map(c => ({ ...c, _dest: destList[0].path })))
+      setSubDismissed(false)
+    } catch (e) {
+      console.error('[KI Lehrplan] error:', e)
       setError(e.message)
     } finally {
       setLoading(false)
@@ -1521,6 +1600,78 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
                   ? <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> KI analysiert…</>
                   : '✦  Karten generieren'}
               </Btn>
+
+              {/* ── Lehrplan button ── */}
+              <div style={{ marginTop: 16, position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                  <div style={{ flex: 1, height: 1, background: T.border }} />
+                  <span style={{ fontSize: 11, color: T.textDim, whiteSpace: 'nowrap' }}>oder</span>
+                  <div style={{ flex: 1, height: 1, background: T.border }} />
+                </div>
+                <button
+                  onClick={() => setLehrplanOpen(o => !o)}
+                  disabled={loading}
+                  style={{
+                    width: '100%', padding: '12px 18px', borderRadius: T.r2,
+                    background: T.s2, border: `1px solid ${lehrplanOpen ? T.acc + '66' : T.border}`,
+                    color: T.text, fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    transition: 'border-color 0.15s',
+                  }}
+                >
+                  <span>📚 Nach offiziellem Lehrplan</span>
+                  <span style={{ color: T.textDim, fontSize: 12 }}>{lehrplanOpen ? '▲' : '▼'}</span>
+                </button>
+
+                {lehrplanOpen && (
+                  <div style={{
+                    marginTop: 8, background: T.s1, border: `1px solid ${T.border}`,
+                    borderRadius: T.r2, overflow: 'hidden',
+                  }}>
+                    {LEHRPLAN_OPTIONS.map(opt => (
+                      <div key={opt.id}>
+                        <button
+                          onClick={() => setLehrplanSel(s => s === opt.id ? null : opt.id)}
+                          style={{
+                            width: '100%', padding: '11px 16px', background: lehrplanSel === opt.id ? T.accDim : 'transparent',
+                            border: 'none', borderBottom: `1px solid ${T.border}`,
+                            color: lehrplanSel === opt.id ? T.acc : T.text,
+                            fontSize: 14, textAlign: 'left', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          }}
+                        >
+                          {opt.label}
+                          {lehrplanSel === opt.id && <span style={{ fontSize: 12 }}>✓</span>}
+                        </button>
+                        {lehrplanSel === opt.id && opt.id === 'custom' && (
+                          <div style={{ padding: '10px 16px', background: T.s2, borderBottom: `1px solid ${T.border}` }}>
+                            <input
+                              value={lehrplanCustom}
+                              onChange={e => setLehrplanCustom(e.target.value)}
+                              placeholder="z.B. Industriemechaniker IHK, Pflege Abschlussprüfung…"
+                              style={{
+                                width: '100%', background: T.s1, border: `1px solid ${T.border}`,
+                                borderRadius: T.r, color: T.text, fontSize: 13,
+                                padding: '8px 12px', outline: 'none', boxSizing: 'border-box',
+                              }}
+                              autoFocus
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <div style={{ padding: '12px 16px', background: T.s1 }}>
+                      <Btn
+                        onClick={generateFromLehrplan}
+                        disabled={!lehrplanSel || (lehrplanSel === 'custom' && !lehrplanCustom.trim()) || loading}
+                        full style={{ padding: '10px', fontSize: 14 }}
+                      >
+                        {loading ? 'Generiert…' : '✦ Karten generieren'}
+                      </Btn>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
           ) : (
@@ -3203,11 +3354,11 @@ const LoginScreen = () => {
           }}>
             Katara
           </div>
-          <div style={{ fontSize: 12, color: T.textDim, marginTop: 8, letterSpacing: 2.5, textTransform: 'uppercase' }}>
-            by Bridgelab
+          <div style={{ fontSize: 17, color: T.text, marginTop: 12, fontWeight: 600, letterSpacing: 0.3 }}>
+            Strukturiertes Lernen.
           </div>
-          <div style={{ fontSize: 13, color: T.textSub, marginTop: 18, letterSpacing: 1.5, textTransform: 'uppercase' }}>
-            Wissen · Strukturiert · Gemeistert
+          <div style={{ fontSize: 13, color: T.textDim, marginTop: 8, letterSpacing: 0.2 }}>
+            Lern was du willst. Wann du willst.
           </div>
         </div>
 
