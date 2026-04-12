@@ -10,17 +10,17 @@ import './App.css'
 
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 const T = {
-  bg:       '#0E111A',
-  s1:       '#141926',   // surface base
-  s2:       '#1A2030',   // surface elevated
-  s3:       '#20283A',   // surface hover / popup
-  s4:       '#28334A',   // surface active
-  border:   '#2A3348',
+  bg:       '#0A0E1A',
+  s1:       '#111622',   // surface base
+  s2:       '#171E30',   // surface elevated
+  s3:       '#1E2840',   // surface hover / popup
+  s4:       '#263348',   // surface active
+  border:   '#263044',
   borderHov:'#364360',
   acc:      '#4F8EF7',
   accHov:   '#3B7BF0',
-  accDim:   'rgba(79,142,247,0.12)',
-  accGlow:  'rgba(79,142,247,0.22)',
+  accDim:   'rgba(79,142,247,0.13)',
+  accGlow:  'rgba(79,142,247,0.28)',
   text:     '#ECF0F9',
   textSub:  '#7E8FAE',
   textDim:  '#4A5675',
@@ -28,7 +28,8 @@ const T = {
   greenDim: 'rgba(52,211,153,0.12)',
   red:      '#F87171',
   redDim:   'rgba(248,113,113,0.12)',
-  amber:    '#FBBF24',
+  amber:    '#F5A623',
+  amberDim: 'rgba(245,166,35,0.12)',
   r:        '8px',
   r2:       '12px',
   r3:       '16px',
@@ -310,19 +311,25 @@ const catColor = id => CAT_COLORS.find(c => c.id === id)?.hex ?? CAT_COLORS[0].h
 
 // ─── PRIMITIVES ───────────────────────────────────────────────────────────────
 const Btn = ({ children, onClick, variant = 'primary', disabled = false, style = {}, full = false }) => {
-  const [hov, setHov] = useState(false)
+  const [hov,     setHov]     = useState(false)
+  const [pressed, setPressed] = useState(false)
 
   const variants = {
     primary: {
       background: disabled ? T.s3 : hov ? T.accHov : T.acc,
       color: disabled ? T.textDim : '#fff',
       border: 'none',
-      boxShadow: !disabled && hov ? `0 0 16px ${T.accGlow}` : 'none',
+      boxShadow: disabled ? 'none' : pressed
+        ? `0 1px 3px rgba(0,0,0,0.3)`
+        : hov
+          ? `0 0 20px ${T.accGlow}, 0 4px 12px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.1) inset`
+          : `0 4px 12px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.08) inset`,
     },
     secondary: {
       background: hov ? T.s3 : T.s2,
       color: T.text,
       border: `1px solid ${hov ? T.borderHov : T.border}`,
+      boxShadow: pressed ? 'none' : '0 2px 6px rgba(0,0,0,0.2)',
     },
     ghost: {
       background: hov ? T.accDim : 'transparent',
@@ -339,6 +346,7 @@ const Btn = ({ children, onClick, variant = 'primary', disabled = false, style =
       color: '#0A2A1E',
       border: 'none',
       fontWeight: 700,
+      boxShadow: pressed ? 'none' : `0 4px 14px rgba(52,211,153,0.35), 0 1px 0 rgba(255,255,255,0.15) inset`,
     },
   }
 
@@ -347,13 +355,16 @@ const Btn = ({ children, onClick, variant = 'primary', disabled = false, style =
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
       onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
+      onMouseLeave={() => { setHov(false); setPressed(false) }}
+      onMouseDown={() => !disabled && setPressed(true)}
+      onMouseUp={() => setPressed(false)}
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         gap: 7, padding: '9px 18px', borderRadius: T.r, fontSize: 14,
         fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'all 0.15s', opacity: disabled ? 0.45 : 1,
+        transition: 'all 0.12s', opacity: disabled ? 0.45 : 1,
         width: full ? '100%' : 'auto', letterSpacing: 0.2,
+        transform: pressed && !disabled ? 'scale(0.96) translateY(1px)' : 'scale(1)',
         ...(variants[variant] || variants.primary),
         ...style,
       }}
@@ -868,7 +879,7 @@ const SectionLabel = ({ children }) => (
 )
 
 // ─── FOLDER CARD (grid tile — Level 1) ───────────────────────────────────────
-const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExport, onSendToPartner }) => {
+const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExport, onSendToPartner, onPublicShare }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
   const groupCount   = item._count ?? 0
@@ -879,21 +890,24 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
 
   return (
     <div
+      className={`glass-card`}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       onClick={onClick}
       style={{
-        background: hov ? T.s3 : T.s2,
-        border: `1px solid ${hov ? color + '55' : T.border}`,
         borderRadius: T.r2,
         padding: '20px 18px',
         cursor: 'pointer',
-        transition: 'all 0.15s',
+        transition: 'all 0.18s',
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
-        boxShadow: hov ? `0 8px 24px rgba(0,0,0,0.3), 0 0 0 1px ${color}22` : 'none',
-        borderTop: `3px solid ${color}`,
+        borderLeft: `3px solid ${color}`,
+        borderTop: `1px solid rgba(255,255,255,0.07)`,
+        boxShadow: hov
+          ? `0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px ${color}33, inset 0 1px 0 rgba(255,255,255,0.06)`
+          : `0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)`,
+        transform: hov ? 'translateY(-2px)' : 'none',
       }}
     >
       {/* Icon */}
@@ -960,11 +974,12 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         onClick={e => e.stopPropagation()}
       >
         <CtxMenu items={[
-          { label: t.rename,                                  action: onRename },
-          ...(onMove   ? [{ label: '↗ Verschieben',         action: onMove   }] : []),
-          ...(onExport ? [{ label: '📤 Exportieren',        action: onExport }] : []),
+          { label: t.rename,                                     action: onRename },
+          ...(onMove        ? [{ label: '↗ Verschieben',        action: onMove        }] : []),
+          ...(onExport      ? [{ label: '📤 Exportieren',       action: onExport      }] : []),
+          ...(onPublicShare ? [{ label: '🔗 Link teilen',       action: onPublicShare }] : []),
           { label: '📤 An Partner senden', action: onSendToPartner },
-          ...(onShare  ? [{ label: '🎁 Mit Partner teilen', action: onShare  }] : []),
+          ...(onShare ? [{ label: '🎁 Mit Partner teilen', action: onShare }] : []),
           { label: t.delete, action: onDelete, danger: true },
         ]} />
       </div>
@@ -1049,20 +1064,30 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
 
 // ─── CARD LIST ITEM ───────────────────────────────────────────────────────────
 const CardItem = ({ card, onSave, onDelete, onMove, onSendToPartner }) => {
-  const [hov,     setHov]     = useState(false)
-  const [editing, setEditing] = useState(false)
-  const [front,   setFront]   = useState(card.front || '')
-  const [back,    setBack]    = useState(card.back || '')
-  const [backShort, setBackShort] = useState(card.backShort || '')
-  const [saving,  setSaving]  = useState(false)
+  const [hov,         setHov]         = useState(false)
+  const [editing,     setEditing]     = useState(false)
+  const [front,       setFront]       = useState(card.front || '')
+  const [back,        setBack]        = useState(card.back || '')
+  const [backShort,   setBackShort]   = useState(card.backShort || '')
+  const [saving,      setSaving]      = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const m = card.mastery || 0
   const mColor = m >= 3 ? T.green : m >= 2 ? T.acc : m >= 1 ? T.red : T.textDim
+  const history = card.history || []
 
   const handleSave = async () => {
     setSaving(true)
     await onSave({ front, back, backShort })
     setSaving(false)
     setEditing(false)
+    setShowHistory(false)
+  }
+
+  const restoreVersion = (v) => {
+    setFront(v.front || '')
+    setBack(v.back || '')
+    setBackShort(v.backShort || '')
+    setShowHistory(false)
   }
 
   const inputStyle = {
@@ -1074,32 +1099,55 @@ const CardItem = ({ card, onSave, onDelete, onMove, onSendToPartner }) => {
   if (editing) {
     return (
       <div style={{
-        background: T.s3, border: `1px solid ${T.acc}44`,
-        borderLeft: `3px solid ${T.acc}`, borderRadius: T.r2,
-        padding: '12px 14px', marginBottom: 8,
+        background: 'rgba(23, 30, 48, 0.85)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+        border: `1px solid ${T.acc}44`, borderLeft: `3px solid ${T.acc}`,
+        borderRadius: T.r2, padding: '12px 14px', marginBottom: 8,
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 10 }}>
-          <input
-            style={inputStyle} value={front} placeholder="Vorderseite"
-            onChange={e => setFront(e.target.value)}
-            autoFocus
-          />
-          <input
-            style={inputStyle} value={back} placeholder="Rückseite"
-            onChange={e => setBack(e.target.value)}
-          />
-          <input
-            style={inputStyle} value={backShort} placeholder="Kurzbez. (optional)"
-            onChange={e => setBackShort(e.target.value)}
-          />
+          <input style={inputStyle} value={front} placeholder="Vorderseite" onChange={e => setFront(e.target.value)} autoFocus />
+          <input style={inputStyle} value={back} placeholder="Rückseite" onChange={e => setBack(e.target.value)} />
+          <input style={inputStyle} value={backShort} placeholder="Kurzbez. (optional)" onChange={e => setBackShort(e.target.value)} />
         </div>
+
+        {/* Version history */}
+        {history.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            <button
+              onClick={() => setShowHistory(h => !h)}
+              style={{ background: 'none', border: 'none', color: T.textDim, fontSize: 11, cursor: 'pointer', padding: 0, letterSpacing: 0.3 }}
+            >
+              {showHistory ? '▲ Verlauf schließen' : `▾ Verlauf anzeigen (${history.length})`}
+            </button>
+            {showHistory && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {[...history].reverse().map((v, i) => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r,
+                    padding: '7px 10px',
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.front || '(leer)'}</div>
+                      <div style={{ fontSize: 11, color: T.textDim, marginTop: 1 }}>
+                        {new Date(v.savedAt).toLocaleDateString('de-DE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => restoreVersion(v)}
+                      style={{ background: T.accDim, border: `1px solid ${T.acc}55`, borderRadius: 6, color: T.acc, fontSize: 11, fontWeight: 600, padding: '3px 10px', cursor: 'pointer', flexShrink: 0 }}
+                    >Wiederherstellen</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={handleSave} disabled={saving}
+          <button onClick={handleSave} disabled={saving}
             style={{ background: T.acc, border: 'none', borderRadius: T.r, color: '#fff', fontSize: 13, fontWeight: 600, padding: '6px 16px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}
           >{saving ? 'Speichert…' : 'Speichern'}</button>
-          <button
-            onClick={() => { setEditing(false); setFront(card.front || ''); setBack(card.back || ''); setBackShort(card.backShort || '') }}
+          <button onClick={() => { setEditing(false); setFront(card.front||''); setBack(card.back||''); setBackShort(card.backShort||''); setShowHistory(false) }}
             style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r, color: T.textSub, fontSize: 13, padding: '6px 14px', cursor: 'pointer' }}
           >Abbrechen</button>
         </div>
@@ -2043,6 +2091,257 @@ const TipModal = ({ tipKey, onClose }) => {
 }
 
 // ─── EXPORT MODAL ─────────────────────────────────────────────────────────────
+// ─── PUBLIC SHARE MODAL ───────────────────────────────────────────────────────
+const PublicShareModal = ({ cards, folderName, createdBy, onClose }) => {
+  const [shareId,  setShareId]  = useState(null)
+  const [creating, setCreating] = useState(false)
+  const [copied,   setCopied]   = useState(false)
+
+  const create = async () => {
+    setCreating(true)
+    try {
+      const cleanCards = cards.map(({ front, back, backShort, image, pronunciation_de, pronunciation_en }) =>
+        ({ front: front||'', back: back||'', backShort: backShort||'', image: image||null, pronunciation_de: pronunciation_de||'', pronunciation_en: pronunciation_en||'' })
+      )
+      const ref = await addDoc(collection(db, 'publicSets'), {
+        folderName, createdBy, cards: cleanCards,
+        createdAt: serverTimestamp(), viewCount: 0,
+      })
+      setShareId(ref.id)
+    } catch (e) { console.error('[PublicShare]', e) }
+    setCreating(false)
+  }
+
+  const shareUrl = shareId ? `https://katara-bridgelab.vercel.app/share/${shareId}` : null
+
+  const copy = () => {
+    navigator.clipboard.writeText(shareUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  }
+
+  return (
+    <Modal onClose={onClose} width={480}>
+      <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 6 }}>🔗 Set öffentlich teilen</h3>
+      <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>
+        Erstelle einen öffentlichen Link. Jeder mit dem Link kann das Set ansehen und importieren — kein Login nötig.
+      </p>
+      {!shareId ? (
+        <>
+          <div style={{ padding: '12px 16px', background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r, marginBottom: 18 }}>
+            <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{folderName}</div>
+            <div style={{ fontSize: 12, color: T.textDim, marginTop: 3 }}>{cards.length} Karten</div>
+          </div>
+          <Btn onClick={create} disabled={creating} full style={{ padding: '12px' }}>
+            {creating ? <><span style={{ display:'inline-block', animation:'spin 1s linear infinite' }}>⟳</span> Link wird erstellt…</> : '🔗 Öffentlichen Link erstellen'}
+          </Btn>
+        </>
+      ) : (
+        <div className="fade-in">
+          <div style={{ padding: '14px 16px', background: T.accDim, border: `1px solid ${T.acc}44`, borderRadius: T.r2, marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color: T.acc, fontWeight: 700, letterSpacing: 0.8, marginBottom: 6 }}>LINK ERSTELLT</div>
+            <div style={{ fontSize: 12, color: T.text, wordBreak: 'break-all', fontFamily: 'monospace', lineHeight: 1.6 }}>{shareUrl}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn onClick={copy} full style={{ padding: '10px' }}>
+              {copied ? '✓ Kopiert!' : '📋 Link kopieren'}
+            </Btn>
+            <Btn onClick={onClose} variant="secondary" style={{ padding: '10px 16px', flexShrink: 0 }}>Schließen</Btn>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+// ─── PUBLIC SET VIEW (no-auth page at /share/{id}) ────────────────────────────
+const PublicSetView = ({ shareId, currentUser }) => {
+  const [data,     setData]     = useState(null)
+  const [loading,  setLoading]  = useState(true)
+  const [notFound, setNotFound] = useState(false)
+  const [comments, setComments] = useState([])
+  const [newComment, setNewComment] = useState('')
+  const [posting,  setPosting]  = useState(false)
+  const [imported, setImported] = useState(false)
+  const [importing,setImporting]= useState(false)
+
+  useEffect(() => {
+    getDoc(doc(db, 'publicSets', shareId))
+      .then(snap => {
+        if (!snap.exists()) { setNotFound(true); setLoading(false); return }
+        setData({ id: snap.id, ...snap.data() })
+        // bump view count
+        updateDoc(doc(db, 'publicSets', shareId), { viewCount: increment(1) }).catch(() => {})
+        setLoading(false)
+      })
+      .catch(() => { setNotFound(true); setLoading(false) })
+  }, [shareId])
+
+  useEffect(() => {
+    if (!shareId) return
+    const unsub = onSnapshot(
+      query(collection(db, `publicSets/${shareId}/comments`), orderBy('createdAt', 'asc')),
+      snap => setComments(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      () => {}
+    )
+    return unsub
+  }, [shareId])
+
+  const postComment = async () => {
+    if (!newComment.trim() || !currentUser) return
+    setPosting(true)
+    await addDoc(collection(db, `publicSets/${shareId}/comments`), {
+      text: newComment.trim(),
+      authorName: currentUser.displayName || currentUser.email,
+      authorUid: currentUser.uid,
+      createdAt: serverTimestamp(),
+    }).catch(() => {})
+    setNewComment('')
+    setPosting(false)
+  }
+
+  const importSet = async () => {
+    if (!currentUser || !data) return
+    setImporting(true)
+    try {
+      const catRef = await addDoc(collection(db, `users/${currentUser.uid}/categories`), {
+        name: data.folderName, color: 'blue',
+        sharedBy: { name: data.createdBy }, readOnly: false,
+        createdAt: serverTimestamp(),
+      })
+      for (const c of data.cards || []) {
+        await addDoc(collection(db, `users/${currentUser.uid}/categories/${catRef.id}/cards`), {
+          ...c, mastery: 0, correctCount: 0, wrongCount: 0,
+          lastReviewed: null, createdAt: serverTimestamp(),
+        })
+      }
+      setImported(true)
+    } catch (e) { console.error('[PublicSetView] import', e) }
+    setImporting(false)
+  }
+
+  const bg = { minHeight: '100vh', background: T.bg, padding: '0 0 60px' }
+
+  if (loading) return (
+    <div style={{ ...bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ color: T.textDim, fontSize: 14 }}>Wird geladen…</div>
+    </div>
+  )
+  if (notFound) return (
+    <div style={{ ...bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 8 }}>Set nicht gefunden</div>
+        <div style={{ fontSize: 13, color: T.textSub, marginBottom: 24 }}>Dieser Link ist ungültig oder wurde entfernt.</div>
+        <Btn onClick={() => window.location.href = '/'}>Zur App</Btn>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="app-bg" style={{ paddingBottom: 60 }}>
+      {/* Header */}
+      <div className="header-glass" style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ maxWidth: 720, margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <Logo size={20} subtitle />
+          <div style={{ flex: 1 }} />
+          {currentUser ? (
+            <Btn onClick={() => window.location.href = '/'} variant="secondary" style={{ padding: '6px 14px', fontSize: 13 }}>← Zur App</Btn>
+          ) : (
+            <Btn onClick={() => window.location.href = '/'} style={{ padding: '6px 14px', fontSize: 13 }}>Anmelden & importieren</Btn>
+          )}
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 24px' }} className="fade-in">
+        {/* Set info */}
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 11, color: T.acc, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>GETEILTES KARTENSET</div>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: T.text, marginBottom: 6 }}>{data.folderName}</h1>
+          <div style={{ fontSize: 13, color: T.textSub }}>
+            {data.cards?.length || 0} Karten · Geteilt von {data.createdBy}
+          </div>
+        </div>
+
+        {/* Import button */}
+        {currentUser && (
+          <div style={{ marginBottom: 24 }}>
+            {imported ? (
+              <div style={{ padding: '12px 18px', background: T.greenDim, border: `1px solid ${T.green}44`, borderRadius: T.r2, color: T.green, fontSize: 14, fontWeight: 600 }}>
+                ✓ Set importiert! Du findest es in deinen Kategorien.
+              </div>
+            ) : (
+              <Btn onClick={importSet} disabled={importing} style={{ padding: '11px 22px', fontSize: 14 }}>
+                {importing ? 'Wird importiert…' : '📥 In meine Kategorien importieren'}
+              </Btn>
+            )}
+          </div>
+        )}
+        {!currentUser && (
+          <div style={{ padding: '14px 18px', background: T.accDim, border: `1px solid ${T.acc}33`, borderRadius: T.r2, marginBottom: 24 }}>
+            <span style={{ fontSize: 13, color: T.acc }}>Melde dich an, um dieses Set zu importieren. </span>
+            <button onClick={() => window.location.href='/'} style={{ background:'none', border:'none', color: T.acc, fontSize: 13, fontWeight: 700, cursor:'pointer', textDecoration:'underline' }}>Anmelden →</button>
+          </div>
+        )}
+
+        {/* Card list */}
+        <div style={{ marginBottom: 36 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 12 }}>
+            Karten ({data.cards?.length || 0})
+          </div>
+          {(data.cards || []).map((c, i) => (
+            <div key={i} className="glass-card" style={{
+              borderRadius: T.r2, padding: '13px 16px', marginBottom: 8,
+              borderLeft: `3px solid ${T.acc}66`,
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{c.front || '(Bild)'}</div>
+              {c.back && <div style={{ fontSize: 12, color: T.textSub, marginTop: 4 }}>→ {c.back}{c.backShort ? ` · ${c.backShort}` : ''}</div>}
+            </div>
+          ))}
+        </div>
+
+        {/* Comments */}
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 14 }}>
+            Kommentare ({comments.length})
+          </div>
+          {comments.length === 0 && (
+            <div style={{ fontSize: 13, color: T.textDim, marginBottom: 18 }}>Noch keine Kommentare. Sei der Erste!</div>
+          )}
+          {comments.map(c => (
+            <div key={c.id} style={{ display:'flex', gap: 10, marginBottom: 14 }}>
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.accDim, border:`1px solid ${T.acc}44`, display:'flex', alignItems:'center', justifyContent:'center', fontSize: 13, fontWeight: 700, color: T.acc, flexShrink: 0 }}>
+                {(c.authorName||'?')[0].toUpperCase()}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display:'flex', gap: 8, alignItems:'baseline', marginBottom: 3 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{c.authorName}</span>
+                  {c.createdAt?.seconds && <span style={{ fontSize: 11, color: T.textDim }}>{new Date(c.createdAt.seconds*1000).toLocaleDateString('de-DE')}</span>}
+                </div>
+                <div style={{ fontSize: 13, color: T.textSub, lineHeight: 1.5 }}>{c.text}</div>
+              </div>
+            </div>
+          ))}
+          {currentUser ? (
+            <div style={{ display:'flex', gap: 8, marginTop: 4 }}>
+              <input
+                value={newComment}
+                onChange={e => setNewComment(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && postComment()}
+                placeholder="Kommentar schreiben…"
+                style={{ flex: 1 }}
+              />
+              <Btn onClick={postComment} disabled={posting || !newComment.trim()} style={{ padding: '8px 16px', fontSize: 13, flexShrink: 0 }}>
+                {posting ? '…' : 'Senden'}
+              </Btn>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: T.textDim, marginTop: 8 }}>Melde dich an, um zu kommentieren.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const ExportModal = ({ cards, folderName, onClose }) => {
   const exportCSV = () => {
     const rows = cards.map(c =>
@@ -2503,7 +2802,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
           ✕ Beenden
         </Btn>
         <div style={{ flex: 1, height: 6, background: T.s4, borderRadius: 3, overflow: 'hidden' }}>
-          <div className="progress-fill" style={{ height: '100%', width: `${progress}%`, background: T.acc, borderRadius: 3 }} />
+          <div className="progress-fill" style={{ width: `${progress}%` }} />
         </div>
         <div style={{ fontSize: 13, fontWeight: 600, color: T.textSub, flexShrink: 0 }}>
           {idx + 1} / {session.length}
@@ -2513,50 +2812,48 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
       {/* Card area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ width: '100%', maxWidth: 580 }}>
-          {/* Flashcard */}
-          <div
-            onClick={() => !flipped && setFlipped(true)}
-            className="fade-in"
-            style={{
-              background: T.s2,
-              border: `1px solid ${flipped ? T.acc : T.border}`,
-              borderRadius: T.r3, padding: '52px 40px', minHeight: 260,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              textAlign: 'center', cursor: flipped ? 'default' : 'pointer',
-              transition: 'border-color 0.22s', marginBottom: 20,
-              boxShadow: flipped ? `0 0 0 1px ${T.acc}33, 0 16px 40px rgba(0,0,0,0.4)` : '0 8px 24px rgba(0,0,0,0.35)',
-            }}
-          >
-            {!flipped ? (
-              <>
+          {/* Flashcard — CSS flip */}
+          <div className="flip-container" style={{ marginBottom: 20, cursor: flipped ? 'default' : 'pointer' }} onClick={() => !flipped && setFlipped(true)}>
+            <div className={`flip-inner${flipped ? ' flipped' : ''}`} style={{ minHeight: 260 }}>
+              {/* FRONT */}
+              <div className="flip-front" style={{
+                background: 'rgba(23, 30, 48, 0.8)',
+                backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                border: `1px solid rgba(255,255,255,0.07)`,
+                borderRadius: T.r3, padding: '52px 40px', minHeight: 260,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                textAlign: 'center',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)',
+              }}>
                 {card.image && <img src={card.image} alt="" style={{ maxHeight: 150, maxWidth: '100%', borderRadius: 10, marginBottom: 22, objectFit: 'contain' }} />}
                 <div style={{ fontSize: 22, fontWeight: 600, color: T.text, lineHeight: 1.45 }}>{card.front || '(Bild)'}</div>
                 {card.front && card.front.trim().length <= 3 && (
                   <PhoneticHint key={card.id} text={card.front.trim()} />
                 )}
                 <div style={{ fontSize: 12, color: T.textDim, marginTop: card.front?.trim().length <= 3 ? 10 : 24, letterSpacing: 0.5 }}>Klicken zum Aufdecken</div>
-              </>
-            ) : (
-              <>
+              </div>
+              {/* BACK */}
+              <div className="flip-back" style={{
+                background: 'rgba(20, 28, 50, 0.88)',
+                backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                border: `1px solid ${T.acc}44`,
+                borderRadius: T.r3, padding: '52px 40px', minHeight: 260,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                textAlign: 'center',
+                boxShadow: `0 0 0 1px ${T.acc}22, 0 16px 48px rgba(0,0,0,0.5), inset 0 1px 0 rgba(79,142,247,0.1)`,
+              }}>
                 {card.backImage && <img src={card.backImage} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 10, marginBottom: 20, objectFit: 'contain' }} />}
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.acc, letterSpacing: 1.6, marginBottom: 14 }}>ANTWORT</div>
                 <div style={{ fontSize: 24, fontWeight: 700, color: T.text, lineHeight: 1.4, marginBottom: 10 }}>{card.back}</div>
-                {card.backShort && <div style={{ fontSize: 16, color: T.acc, fontWeight: 600, marginBottom: 10 }}>{card.backShort}</div>}
-
-                {/* TTS */}
+                {card.backShort && <div style={{ fontSize: 16, color: T.amber, fontWeight: 600, marginBottom: 10 }}>{card.backShort}</div>}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 6, flexWrap: 'wrap' }}>
                   <TtsBtn text={card.pronunciation_de || card.back} lang="de-DE" label="🇩🇪 DE" />
                   {(card.pronunciation_en || card.back) && (
                     <TtsBtn text={card.pronunciation_en || card.back} lang="en-GB" label="🇬🇧 EN" />
                   )}
                 </div>
-
-                {/* Pronunciation guides */}
                 {(card.pronunciation_de || card.pronunciation_en) && (
-                  <div style={{
-                    marginTop: 16, padding: '12px 16px', textAlign: 'left',
-                    background: T.s1, borderRadius: T.r, border: `1px solid ${T.border}`,
-                  }}>
+                  <div style={{ marginTop: 16, padding: '12px 16px', textAlign: 'left', background: T.s1, borderRadius: T.r, border: `1px solid ${T.border}` }}>
                     {card.pronunciation_de && (
                       <div style={{ fontSize: 13, color: T.textSub, marginBottom: card.pronunciation_en ? 6 : 0 }}>
                         🇩🇪 Deutsche Aussprache: <span style={{ color: T.text, fontWeight: 500 }}>{card.pronunciation_de}</span>
@@ -2569,8 +2866,8 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
                     )}
                   </div>
                 )}
-              </>
-            )}
+              </div>
+            </div>
           </div>
 
           {/* Rating */}
@@ -2599,12 +2896,9 @@ const Empty = ({ icon, title, sub, children }) => (
   </div>
 )
 
-// ─── SCHOOL SETUP MODAL ───────────────────────────────────────────────────────
-const SchoolSetupModal = ({ onConfirm, onClose }) => {
-  const [grade,   setGrade]   = useState('Klasse 1')
-  const [lang,    setLang]    = useState('de')
-  const [country, setCountry] = useState('de')
-
+// ─── SHARED SETUP MODAL SHELL ─────────────────────────────────────────────────
+const SetupModal = ({ title, subtitle, onConfirm, onClose, children, canConfirm = true }) => {
+  const [generating, setGenerating] = useState(false)
   const chip = (active) => ({
     padding: '6px 12px', borderRadius: T.r, fontSize: 13, fontWeight: 600,
     border: `1px solid ${active ? T.acc : T.border}`,
@@ -2612,54 +2906,233 @@ const SchoolSetupModal = ({ onConfirm, onClose }) => {
     color: active ? T.acc : T.textSub,
     cursor: 'pointer', transition: 'all 0.12s', whiteSpace: 'nowrap',
   })
-  const label = (text) => (
+  const labelEl = (text) => (
     <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>{text}</div>
   )
-
+  const handle = async () => {
+    setGenerating(true)
+    try { await onConfirm() } finally { setGenerating(false) }
+  }
   return (
-    <Modal onClose={onClose} width={560}>
-      <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 6 }}>🎓 Schule einrichten</h3>
-      <p style={{ fontSize: 13, color: T.textSub, marginBottom: 22 }}>
-        KI kennt den offiziellen Lehrplan für dein Land und generiert altersgerechte Karten.
-      </p>
-
-      {/* Country */}
-      <div style={{ marginBottom: 18 }}>
-        {label('Land / Lehrplan')}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {SCHOOL_COUNTRIES.map(c => (
-            <button key={c.id} onClick={() => setCountry(c.id)} style={chip(country === c.id)}>
-              {c.flag} {c.name}{c.curriculum ? ` (${c.curriculum})` : ''}
-            </button>
-          ))}
-        </div>
+    <Modal onClose={generating ? undefined : onClose} width={560}>
+      <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 6 }}>{title}</h3>
+      <p style={{ fontSize: 13, color: T.textSub, marginBottom: 22 }}>{subtitle}</p>
+      <div style={{ opacity: generating ? 0.45 : 1, pointerEvents: generating ? 'none' : 'auto' }}>
+        {typeof children === 'function' ? children({ chip, labelEl }) : children}
       </div>
-
-      {/* Grade */}
-      <div style={{ marginBottom: 18 }}>
-        {label('Klassenstufe')}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {SCHOOL_GRADES.map(g => (
-            <button key={g} onClick={() => setGrade(g)} style={chip(grade === g)}>{g}</button>
-          ))}
+      {generating && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '12px 16px', margin: '16px 0 0',
+          background: T.accDim, border: `1px solid ${T.acc}44`, borderRadius: T.r,
+        }}>
+          <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', fontSize: 16 }}>⟳</span>
+          <span style={{ fontSize: 13, color: T.acc, fontWeight: 600 }}>KI generiert deine Karten…</span>
         </div>
-      </div>
-
-      {/* Language */}
-      <div style={{ marginBottom: 26 }}>
-        {label('Lernsprache')}
-        <div style={{ display: 'flex', gap: 8 }}>
-          {SCHOOL_LANGS.map(l => (
-            <button key={l.id} onClick={() => setLang(l.id)} style={chip(lang === l.id)}>{l.label}</button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10 }}>
-        <Btn onClick={() => onConfirm(grade, lang, country)} full style={{ padding: '11px' }}>Kategorie erstellen</Btn>
-        <Btn onClick={onClose} variant="secondary" style={{ padding: '11px 16px', flexShrink: 0 }}>Abbrechen</Btn>
+      )}
+      <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+        <Btn onClick={handle} disabled={generating || !canConfirm} full style={{ padding: '11px' }}>
+          {generating ? 'Wird generiert…' : '🤖 KI Karten generieren'}
+        </Btn>
+        {!generating && (
+          <Btn onClick={onClose} variant="secondary" style={{ padding: '11px 16px', flexShrink: 0 }}>Abbrechen</Btn>
+        )}
       </div>
     </Modal>
+  )
+}
+
+// ─── BERUF SETUP MODAL ────────────────────────────────────────────────────────
+const BERUF_FIELDS = ['Handwerk','IT','Medizin','Recht','Finanzen','Transport & Logistik','Gastronomie','Pädagogik','Eigene Eingabe']
+const BERUF_LEVELS = ['Azubi','Fachkraft','Meister/Techniker','Studium']
+const SETUP_COUNTRIES = ['Deutschland','Österreich','Schweiz','Andere']
+const SETUP_LANGS = [{ id:'de', label:'🇩🇪 Deutsch' },{ id:'en', label:'🇬🇧 Englisch' },{ id:'de+en', label:'Beide' }]
+
+const BerufSetupModal = ({ onConfirm, onClose }) => {
+  const [field,   setField]   = useState('IT')
+  const [custom,  setCustom]  = useState('')
+  const [level,   setLevel]   = useState('Fachkraft')
+  const [country, setCountry] = useState('Deutschland')
+  const [lang,    setLang]    = useState('de')
+  const topic = field === 'Eigene Eingabe' ? custom.trim() : field
+  return (
+    <SetupModal
+      title="💼 Beruf einrichten"
+      subtitle="KI generiert praxisnahe Lernkarten passend zu deinem Berufsfeld und Niveau."
+      onConfirm={() => onConfirm({ field: topic, level, country, lang })}
+      onClose={onClose}
+      canConfirm={field !== 'Eigene Eingabe' || !!custom.trim()}
+    >
+      {({ chip, labelEl }) => (<>
+        <div style={{ marginBottom: 18 }}>
+          {labelEl('Berufsfeld')}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {BERUF_FIELDS.map(f => <button key={f} onClick={() => setField(f)} style={chip(field === f)}>{f}</button>)}
+          </div>
+          {field === 'Eigene Eingabe' && (
+            <input value={custom} onChange={e => setCustom(e.target.value)} placeholder="z.B. Mechatroniker, Kaufmann im Einzelhandel…"
+              style={{ marginTop: 10, width: '100%', background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r, color: T.text, fontSize: 13, padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }} autoFocus />
+          )}
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          {labelEl('Niveau')}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {BERUF_LEVELS.map(l => <button key={l} onClick={() => setLevel(l)} style={chip(level === l)}>{l}</button>)}
+          </div>
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          {labelEl('Land')}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {SETUP_COUNTRIES.map(c => <button key={c} onClick={() => setCountry(c)} style={chip(country === c)}>{c}</button>)}
+          </div>
+        </div>
+        <div style={{ marginBottom: 4 }}>
+          {labelEl('Lernsprache')}
+          <div style={{ display: 'flex', gap: 6 }}>
+            {SETUP_LANGS.map(l => <button key={l.id} onClick={() => setLang(l.id)} style={chip(lang === l.id)}>{l.label}</button>)}
+          </div>
+        </div>
+      </>)}
+    </SetupModal>
+  )
+}
+
+// ─── STUDIUM SETUP MODAL ──────────────────────────────────────────────────────
+const STUDIUM_FIELDS = ['Medizin','Jura','BWL','Informatik','Ingenieurwesen','Psychologie','Lehramt','Eigene Eingabe']
+const STUDIUM_SEMESTERS = ['1–2','3–4','5–6','7+']
+
+const StudiumSetupModal = ({ onConfirm, onClose }) => {
+  const [studiengang, setStudiengang] = useState('BWL')
+  const [custom,      setCustom]      = useState('')
+  const [semester,    setSemester]    = useState('1–2')
+  const [country,     setCountry]     = useState('Deutschland')
+  const [lang,        setLang]        = useState('de')
+  const topic = studiengang === 'Eigene Eingabe' ? custom.trim() : studiengang
+  return (
+    <SetupModal
+      title="📚 Studium einrichten"
+      subtitle="KI generiert prüfungsrelevante Lernkarten passend zu deinem Studiengang und Semester."
+      onConfirm={() => onConfirm({ studiengang: topic, semester, country, lang })}
+      onClose={onClose}
+      canConfirm={studiengang !== 'Eigene Eingabe' || !!custom.trim()}
+    >
+      {({ chip, labelEl }) => (<>
+        <div style={{ marginBottom: 18 }}>
+          {labelEl('Studiengang')}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {STUDIUM_FIELDS.map(f => <button key={f} onClick={() => setStudiengang(f)} style={chip(studiengang === f)}>{f}</button>)}
+          </div>
+          {studiengang === 'Eigene Eingabe' && (
+            <input value={custom} onChange={e => setCustom(e.target.value)} placeholder="z.B. Architektur, Sportwissenschaft…"
+              style={{ marginTop: 10, width: '100%', background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r, color: T.text, fontSize: 13, padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }} autoFocus />
+          )}
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          {labelEl('Semester')}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {STUDIUM_SEMESTERS.map(s => <button key={s} onClick={() => setSemester(s)} style={chip(semester === s)}>Semester {s}</button>)}
+          </div>
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          {labelEl('Land')}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {SETUP_COUNTRIES.map(c => <button key={c} onClick={() => setCountry(c)} style={chip(country === c)}>{c}</button>)}
+          </div>
+        </div>
+        <div style={{ marginBottom: 4 }}>
+          {labelEl('Lernsprache')}
+          <div style={{ display: 'flex', gap: 6 }}>
+            {SETUP_LANGS.map(l => <button key={l.id} onClick={() => setLang(l.id)} style={chip(lang === l.id)}>{l.label}</button>)}
+          </div>
+        </div>
+      </>)}
+    </SetupModal>
+  )
+}
+
+// ─── HOBBY SETUP MODAL ────────────────────────────────────────────────────────
+const HOBBY_OPTIONS  = ['Sport','Musik','Sprachen','Kochen','Fotografie','Gaming','Kunst','Technik','Eigene Eingabe']
+const HOBBY_LEVELS   = ['Anfänger','Fortgeschritten','Experte']
+
+const HobbySetupModal = ({ onConfirm, onClose }) => {
+  const [hobby,   setHobby]   = useState('Sport')
+  const [custom,  setCustom]  = useState('')
+  const [level,   setLevel]   = useState('Anfänger')
+  const [lang,    setLang]    = useState('de')
+  const topic = hobby === 'Eigene Eingabe' ? custom.trim() : hobby
+  return (
+    <SetupModal
+      title="🎯 Hobby einrichten"
+      subtitle="KI generiert Lernkarten passend zu deinem Hobby und Erfahrungsstand."
+      onConfirm={() => onConfirm({ hobby: topic, level, lang })}
+      onClose={onClose}
+      canConfirm={hobby !== 'Eigene Eingabe' || !!custom.trim()}
+    >
+      {({ chip, labelEl }) => (<>
+        <div style={{ marginBottom: 18 }}>
+          {labelEl('Hobby')}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {HOBBY_OPTIONS.map(h => <button key={h} onClick={() => setHobby(h)} style={chip(hobby === h)}>{h}</button>)}
+          </div>
+          {hobby === 'Eigene Eingabe' && (
+            <input value={custom} onChange={e => setCustom(e.target.value)} placeholder="z.B. Schach, Angeln, Bouldern…"
+              style={{ marginTop: 10, width: '100%', background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r, color: T.text, fontSize: 13, padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }} autoFocus />
+          )}
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          {labelEl('Niveau')}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {HOBBY_LEVELS.map(l => <button key={l} onClick={() => setLevel(l)} style={chip(level === l)}>{l}</button>)}
+          </div>
+        </div>
+        <div style={{ marginBottom: 4 }}>
+          {labelEl('Sprache')}
+          <div style={{ display: 'flex', gap: 6 }}>
+            {SETUP_LANGS.map(l => <button key={l.id} onClick={() => setLang(l.id)} style={chip(lang === l.id)}>{l.label}</button>)}
+          </div>
+        </div>
+      </>)}
+    </SetupModal>
+  )
+}
+
+// ─── SCHOOL SETUP MODAL ───────────────────────────────────────────────────────
+const SchoolSetupModal = ({ onConfirm, onClose }) => {
+  const [grade,   setGrade]   = useState('Klasse 1')
+  const [lang,    setLang]    = useState('de')
+  const [country, setCountry] = useState('de')
+  return (
+    <SetupModal
+      title="🎓 Schule einrichten"
+      subtitle="KI kennt den offiziellen Lehrplan für dein Land und generiert altersgerechte Karten."
+      onConfirm={() => onConfirm(grade, lang, country)}
+      onClose={onClose}
+    >
+      {({ chip, labelEl }) => (<>
+        <div style={{ marginBottom: 18 }}>
+          {labelEl('Land / Lehrplan')}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {SCHOOL_COUNTRIES.map(c => (
+              <button key={c.id} onClick={() => setCountry(c.id)} style={chip(country === c.id)}>
+                {c.flag} {c.name}{c.curriculum ? ` (${c.curriculum})` : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          {labelEl('Klassenstufe')}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {SCHOOL_GRADES.map(g => <button key={g} onClick={() => setGrade(g)} style={chip(grade === g)}>{g}</button>)}
+          </div>
+        </div>
+        <div style={{ marginBottom: 4 }}>
+          {labelEl('Lernsprache')}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {SCHOOL_LANGS.map(l => <button key={l.id} onClick={() => setLang(l.id)} style={chip(lang === l.id)}>{l.label}</button>)}
+          </div>
+        </div>
+      </>)}
+    </SetupModal>
   )
 }
 
@@ -3439,9 +3912,13 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
   const [sendTarget,  setSendTarget]  = useState(null) // { name, getCards } for An Partner senden
   const [movingCat,   setMovingCat]   = useState(null) // item being moved
   const [moving,      setMoving]      = useState(false)
-  const [exportData,  setExportData]  = useState(null) // { cards, name }
-  const [activeTip,    setActiveTip]   = useState(null)
-  const [schoolSetup,  setSchoolSetup] = useState(false)
+  const [exportData,      setExportData]      = useState(null) // { cards, name }
+  const [publicShareData, setPublicShareData] = useState(null) // { cards, name }
+  const [activeTip,       setActiveTip]       = useState(null)
+  const [schoolSetup,     setSchoolSetup]      = useState(false)
+  const [berufSetup,   setBerufSetup]   = useState(false)
+  const [studiumSetup, setStudiumSetup] = useState(false)
+  const [hobbySetup,   setHobbySetup]   = useState(false)
   const [quickLoading, setQuickLoading] = useState(null) // label of chip being loaded
   const { dismissed, dismiss }         = useTips()
   const { partnerUid, partnerName }   = usePartner()
@@ -3474,32 +3951,20 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
     }
   }
 
-  const KI_PROMPTS = {
-    Beruf:   'Generate 10 practical starter flashcards for professional development and workplace skills in German. Cover job-relevant vocabulary, processes, and key concepts. Mix of difficulty.',
-    Studium: 'Generate 10 starter flashcards for university students in German. Cover study skills, academic vocabulary, and general knowledge useful at university.',
-    Hobby:   'Generate 10 starter flashcards for hobbies and leisure activities in German. Fun, practical vocabulary, activity names, and helpful tips.',
-  }
-
-  const createWithKI = async (label, color, extra = {}) => {
-    setQuickLoading(label)
+  // Shared: create category + generate KI cards + navigate in
+  const createWithKI = async (name, color, prompt, extra = {}) => {
     try {
-      // 1. Create category
       const ref = await addDoc(collection(db, path), {
-        name: label, color: color || 'blue', ...extra,
+        name, color: color || 'blue', ...extra,
         createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       })
-      const newCat = { id: ref.id, name: label, color: color || 'blue', ...extra }
-
-      // 2. Generate starter cards
-      const prompt = `${KI_PROMPTS[label] || `Generate 10 starter flashcards for a ${label} learner in German. Mix of practical, useful cards.`}
-Return ONLY a valid JSON array, no markdown:
-[{"front":"...","back":"...","backShort":"..."}]`
+      const newCat = { id: ref.id, name, color: color || 'blue', ...extra }
       const res = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1500, messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 4000, messages: [{ role: 'user', content: prompt }] }),
       })
       const data = await res.json()
-      const raw  = data.content?.[0]?.text || ''
+      const raw  = (data.content?.[0]?.text || '').replace(/```(?:json)?/gi,'').replace(/```/g,'').trim()
       const m    = raw.match(/\[[\s\S]*\]/)
       if (m) {
         const cards = JSON.parse(m[0])
@@ -3507,20 +3972,13 @@ Return ONLY a valid JSON array, no markdown:
         for (const c of Array.isArray(cards) ? cards : []) {
           await addDoc(collection(db, cardsPath), {
             front: c.front || '', back: c.back || '', backShort: c.backShort || '',
-            back_de: '', back_en: '', emoji: '',
             image: null, correctCount: 0, wrongCount: 0,
             mastery: 0, lastReviewed: null, createdAt: serverTimestamp(),
           })
         }
       }
-
-      // 3. Navigate into the new category
-      setQuickLoading(null)
       onOpen(newCat)
-    } catch (_) {
-      setQuickLoading(null)
-      load()
-    }
+    } catch (_) { load() }
   }
 
   const remove = async id => {
@@ -3683,7 +4141,12 @@ Return ONLY a valid JSON array, no markdown:
                   <button
                     key={label}
                     disabled={!!quickLoading}
-                    onClick={() => label === 'Schule' ? setSchoolSetup(true) : createWithKI(label, color)}
+                    onClick={() => {
+                      if (label === 'Beruf')   return setBerufSetup(true)
+                      if (label === 'Schule')  return setSchoolSetup(true)
+                      if (label === 'Studium') return setStudiumSetup(true)
+                      if (label === 'Hobby')   return setHobbySetup(true)
+                    }}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 6,
                       padding: '6px 14px', borderRadius: 20, flexShrink: 0,
@@ -3697,8 +4160,8 @@ Return ONLY a valid JSON array, no markdown:
                     onMouseEnter={e => { if (!quickLoading) { e.currentTarget.style.background = T.s3; e.currentTarget.style.color = T.text; e.currentTarget.style.borderColor = T.borderHov } }}
                     onMouseLeave={e => { if (!quickLoading) { e.currentTarget.style.background = T.s2; e.currentTarget.style.color = T.textSub; e.currentTarget.style.borderColor = T.border } }}
                   >
-                    {isLoading ? <span style={{ fontSize: 11 }}>✦</span> : <span>{icon}</span>}
-                    {isLoading ? 'Generiert…' : label}
+                    {isLoading ? <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', fontSize: 12 }}>⟳</span> : <span>{icon}</span>}
+                    {isLoading ? 'KI generiert Karten…' : label}
                   </button>
                 )
               })}
@@ -3728,6 +4191,10 @@ Return ONLY a valid JSON array, no markdown:
                   else setShareTarget(item)
                 } : undefined}
                 onSendToPartner={() => setSendTarget({ name: item.name, getCards: () => collectAllCards(uid, item.id) })}
+                onPublicShare={async () => {
+                  const cs = await collectAllCards(uid, item.id)
+                  setPublicShareData({ cards: cs, name: item.name })
+                }}
               />
             ))}
           </div>
@@ -3735,25 +4202,52 @@ Return ONLY a valid JSON array, no markdown:
       </div>
 
       {modal       && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
+      {berufSetup && <BerufSetupModal onConfirm={async ({ field, level, country, lang }) => {
+        const langLabel = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
+        const prompt = `Du bist ein erfahrener Ausbilder und Berufsschullehrer in ${country}. Erstelle 15 praxisnahe Lernkarten für das Berufsfeld "${field}" auf Niveau "${level}".
+Lernsprache: ${langLabel}. Decke wichtige Fachbegriffe, Prozesse, Vorschriften und Kernkonzepte ab, die in Prüfungen und im Berufsalltag relevant sind.
+Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
+[{"front":"...","back":"...","backShort":"..."}]`
+        await createWithKI('Beruf', 'blue', prompt)
+        setBerufSetup(false)
+      }} onClose={() => setBerufSetup(false)} />}
+      {studiumSetup && <StudiumSetupModal onConfirm={async ({ studiengang, semester, country, lang }) => {
+        const langLabel = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
+        const prompt = `Du bist ein erfahrener Hochschuldozent in ${country}. Erstelle 15 prüfungsrelevante Lernkarten für das Studium "${studiengang}", Semester ${semester}.
+Lernsprache: ${langLabel}. Decke die wichtigsten Konzepte, Fachbegriffe, Theorien und Methoden ab, die in Klausuren und mündlichen Prüfungen häufig abgefragt werden.
+Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
+[{"front":"...","back":"...","backShort":"..."}]`
+        await createWithKI('Studium', 'green', prompt)
+        setStudiumSetup(false)
+      }} onClose={() => setStudiumSetup(false)} />}
+      {hobbySetup && <HobbySetupModal onConfirm={async ({ hobby, level, lang }) => {
+        const langLabel = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
+        const prompt = `Du bist ein begeisterter Experte für "${hobby}". Erstelle 15 motivierende Lernkarten für Niveau "${level}".
+Lernsprache: ${langLabel}. Decke praktische Tipps, wichtige Begriffe, Techniken und interessante Fakten zum Hobby ab.
+Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
+[{"front":"...","back":"...","backShort":"..."}]`
+        await createWithKI('Hobby', 'amber', prompt)
+        setHobbySetup(false)
+      }} onClose={() => setHobbySetup(false)} />}
       {schoolSetup && <SchoolSetupModal onConfirm={async (grade, lang, country) => {
+        const countryObj  = SCHOOL_COUNTRIES.find(c => c.id === country)
+        const countryName = countryObj?.name || 'Deutschland'
+        const curriculum  = countryObj?.curriculum || 'KMK'
+        const langLabel   = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
+        const prompt = `Du bist ein erfahrener ${countryName}-Lehrer. Erstelle 15 altersgerechte Lernkarten für ${grade} in ${countryName} (${curriculum}-Lehrplan, ${new Date().getFullYear()}).
+Lernsprache: ${langLabel}. Karten sollen die wichtigsten Themen dieser Klassenstufe abdecken: Kernfächer, wichtige Begriffe, Konzepte.
+Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
+[{"front":"...","back":"...","backShort":"..."}]`
+        await createWithKI('Schule', 'purple', prompt, { schoolMode: true, schoolGrade: grade, schoolLang: lang, schoolCountry: country })
         setSchoolSetup(false)
-        setQuickLoading('Schule')
-        try {
-          const ref = await addDoc(collection(db, path), {
-            name: 'Schule', color: 'purple',
-            schoolMode: true, schoolGrade: grade, schoolLang: lang, schoolCountry: country,
-            createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-          })
-          setQuickLoading(null)
-          onOpen({ id: ref.id, name: 'Schule', color: 'purple', schoolMode: true, schoolGrade: grade, schoolLang: lang, schoolCountry: country })
-        } catch (_) { setQuickLoading(null); load() }
       }} onClose={() => setSchoolSetup(false)} />}
       {renaming    && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
       {shareTarget && activeTip === 'teilen' && <TipModal tipKey="teilen" onClose={() => setActiveTip(null)} />}
       {shareTarget && activeTip !== 'teilen' && <ShareModal catName={shareTarget.name} partnerName={partnerInfo?.name || 'Partner'} sharing={sharing} onConfirm={shareWithPartner} onClose={() => setShareTarget(null)} />}
       {sendTarget  && <SendToPartnerModal uid={uid} displayName={user.displayName || user.email} name={sendTarget.name} getCards={sendTarget.getCards} onClose={() => setSendTarget(null)} />}
-      {exportData  && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
-      {movingCat   && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={movingCat.id} onPick={handleCatMove} onClose={() => setMovingCat(null)} />}
+      {exportData       && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
+      {publicShareData  && <PublicShareModal cards={publicShareData.cards} folderName={publicShareData.name} createdBy={user.displayName || user.email} onClose={() => setPublicShareData(null)} />}
+      {movingCat        && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={movingCat.id} onPick={handleCatMove} onClose={() => setMovingCat(null)} />}
       {moving      && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ color: T.textSub, fontSize: 14 }}>Wird verschoben…</div>
@@ -3910,7 +4404,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
               </Btn>
             </div>
             {cards.map(c => (
-              <CardItem key={c.id} card={c} onSave={async data => { await updateDoc(doc(db, `${cardsPath}/${c.id}`), data); load() }} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
+              <CardItem key={c.id} card={c} onSave={async data => { const hist = [...(c.history||[]).slice(-4), {front:c.front,back:c.back,backShort:c.backShort,savedAt:Date.now()}]; await updateDoc(doc(db, `${cardsPath}/${c.id}`), {...data, history: hist}); load() }} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
             ))}
           </div>
         )}
@@ -4078,7 +4572,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
               </Btn>
             </div>
             {cards.map(c => (
-              <CardItem key={c.id} card={c} onSave={async data => { await updateDoc(doc(db, `${cardsPath}/${c.id}`), data); load() }} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
+              <CardItem key={c.id} card={c} onSave={async data => { const hist = [...(c.history||[]).slice(-4), {front:c.front,back:c.back,backShort:c.backShort,savedAt:Date.now()}]; await updateDoc(doc(db, `${cardsPath}/${c.id}`), {...data, history: hist}); load() }} onDelete={() => removeCard(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
             ))}
           </div>
         )}
@@ -4207,7 +4701,7 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
             <Btn onClick={() => setCardModal('new')} variant="secondary" style={{ padding: '8px 14px', fontSize: 13 }}>{t.addCard}</Btn>
           </Empty>
         ) : cards.map(c => (
-          <CardItem key={c.id} card={c} onSave={async data => { await updateDoc(doc(db, `${cardsPath}/${c.id}`), data); load() }} onDelete={() => remove(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
+          <CardItem key={c.id} card={c} onSave={async data => { const hist = [...(c.history||[]).slice(-4), {front:c.front,back:c.back,backShort:c.backShort,savedAt:Date.now()}]; await updateDoc(doc(db, `${cardsPath}/${c.id}`), {...data, history: hist}); load() }} onDelete={() => remove(c.id)} onMove={card => setFolderPicker(card)} onSendToPartner={card => setSendTarget({ name: card.front || '(Karte)', getCards: async () => [card] })} />
         ))}
       </div>
 
@@ -4385,6 +4879,12 @@ export default function App() {
   const goTo  = i => setNav(n => n.slice(0, i + 1))
   const cur   = nav[nav.length - 1]
   const lang  = LANG[settings.lang] || LANG.de
+
+  // Public share URL: /share/{shareId} — render without auth requirement
+  const publicShareId = window.location.pathname.match(/^\/share\/([A-Za-z0-9_-]+)/)?.[1]
+  if (publicShareId) {
+    return <PublicSetView shareId={publicShareId} currentUser={user || null} />
+  }
 
   if (user === undefined) {
     return (
