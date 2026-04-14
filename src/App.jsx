@@ -107,7 +107,7 @@ const SCHOOL_LANGS  = [
 ]
 const SCHOOL_COUNTRIES = [
   { id: 'de', flag: '🇩🇪', name: 'Deutschland',  curriculum: 'KMK'                },
-  { id: 'ke', flag: '🇰🇪', name: 'Kenia',         curriculum: 'CBC'                },
+  { id: 'ke', flag: '🇰🇪', name: 'Kenia',         curriculum: ''                   },
   { id: 'at', flag: '🇦🇹', name: 'Österreich',    curriculum: 'BMBWF'              },
   { id: 'ch', flag: '🇨🇭', name: 'Schweiz',       curriculum: 'LP21'               },
   { id: 'gb', flag: '🇬🇧', name: 'UK',            curriculum: 'National Curriculum' },
@@ -116,6 +116,19 @@ const SCHOOL_COUNTRIES = [
 ]
 
 // ─── UTILS ────────────────────────────────────────────────────────────────────
+// String similarity: character-overlap ratio (Dice coefficient on bigrams)
+const strSimilarity = (a, b) => {
+  const norm = s => (s || '').toLowerCase().trim().replace(/[^a-z0-9äöüß]/gi, '')
+  const na = norm(a); const nb = norm(b)
+  if (!na || !nb) return 0
+  if (na === nb) return 1
+  if (na.length < 2 || nb.length < 2) return na === nb ? 1 : 0
+  const bigrams = s => { const r = new Set(); for (let i = 0; i < s.length - 1; i++) r.add(s.slice(i, i+2)); return r }
+  const ba = bigrams(na); const bb = bigrams(nb)
+  let intersect = 0; ba.forEach(g => { if (bb.has(g)) intersect++ })
+  return (2 * intersect) / (ba.size + bb.size)
+}
+
 const toBase64 = f => new Promise((res, rej) => {
   const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(f)
 })
@@ -178,20 +191,32 @@ const enrichCategoryData = async (uid, catId) => {
     const lastStudied = allLasts.length > 0
       ? allLasts.reduce((a, b) => ((a?.seconds || 0) > (b?.seconds || 0) ? a : b))
       : null
-    // count mastered cards (mastery >= 2)
-    const countMastered = async (colPath) => {
+    // count mastered cards (mastery >= 2) and cards due today
+    const now = new Date()
+    const countMasteredAndDue = async (colPath) => {
       try {
         const snap = await getDocs(collection(db, colPath))
-        return snap.docs.filter(d => (d.data().mastery || 0) >= 2).length
-      } catch { return 0 }
+        let mastered = 0, due = 0
+        for (const d of snap.docs) {
+          const data = d.data()
+          if ((data.mastery || 0) >= 2) mastered++
+          if (data.nextReview) {
+            const nr = data.nextReview.toDate ? data.nextReview.toDate() : new Date(data.nextReview)
+            if (nr <= now) due++
+          }
+        }
+        return { mastered, due }
+      } catch { return { mastered: 0, due: 0 } }
     }
-    const [directMastered, ...subcatMastered] = await Promise.all([
-      countMastered(`${catPath}/cards`),
-      ...subcatIds.map(sid => countMastered(`${catPath}/subcategories/${sid}/cards`)),
+    const [directMD, ...subcatMD] = await Promise.all([
+      countMasteredAndDue(`${catPath}/cards`),
+      ...subcatIds.map(sid => countMasteredAndDue(`${catPath}/subcategories/${sid}/cards`)),
     ])
-    const masteredCount = directMastered + subcatMastered.reduce((a, b) => a + b, 0)
-    return { groupCount: subcatIds.length, cardCount, lastStudied, masteredCount }
-  } catch { return { groupCount: 0, cardCount: 0, lastStudied: null, masteredCount: 0 } }
+    const allMD = [directMD, ...subcatMD]
+    const masteredCount = allMD.reduce((a, b) => a + b.mastered, 0)
+    const dueCount      = allMD.reduce((a, b) => a + b.due, 0)
+    return { groupCount: subcatIds.length, cardCount, lastStudied, masteredCount, dueCount }
+  } catch { return { groupCount: 0, cardCount: 0, lastStudied: null, masteredCount: 0, dueCount: 0 } }
 }
 
 // ─── GLOBAL STATS ─────────────────────────────────────────────────────────────
@@ -2500,17 +2525,21 @@ const ShareModal = ({ catName, partnerName, onConfirm, onClose, sharing }) => (
 
 // ─── LEARN MODE ───────────────────────────────────────────────────────────────
 const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
-  const [phase,       setPhase]       = useState('settings') // settings|loading|session|result
-  const [cardCount,   setCardCount]   = useState(() => Math.min(10, initCards.length))
-  const [learnMode,   setLearnMode]   = useState('klassisch') // 'klassisch'|'ki'
-  const [session,     setSession]     = useState([])
-  const [idx,         setIdx]         = useState(0)
-  const [flipped,     setFlipped]     = useState(false)
-  const [results,     setResults]     = useState([])  // [{id, card, knew}]
-  const [kiError,     setKiError]     = useState('')
-  const [wrongTips,   setWrongTips]   = useState({})  // cardId → tip string
-  const [tipsLoading, setTipsLoading] = useState(false)
-  const sessionStartRef = useRef(null)
+  const [phase,         setPhase]         = useState('settings') // settings|loading|session|result
+  const [cardCount,     setCardCount]     = useState(() => Math.min(10, initCards.length))
+  const [learnMode,     setLearnMode]     = useState('klassisch')
+  const [queue,         setQueue]         = useState([])   // mutable session queue; queue[0] = current card
+  const [sessionSize,   setSessionSize]   = useState(0)    // initial queue length for progress bar
+  const [flipped,       setFlipped]       = useState(false)
+  const [results,       setResults]       = useState([])   // [{card, rating}] — may contain duplicates (re-shown cards)
+  const [kiError,       setKiError]       = useState('')
+  const [wrongTips,     setWrongTips]     = useState({})
+  const [tipsLoading,   setTipsLoading]   = useState(false)
+  const [micActive,     setMicActive]     = useState(false)
+  const [micTranscript, setMicTranscript] = useState('')
+  const sessionStartRef    = useRef(null)
+  const sessionAttemptsRef = useRef({})   // {cardId: timesProcessed} — caps re-inserts
+  const micRef             = useRef(null)
 
   const countOptions = (() => {
     const opts = [5, 10, 20].filter(n => n <= initCards.length)
@@ -2518,11 +2547,14 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     return opts
   })()
 
-  const fetchWrongTips = async (wrongResults) => {
-    if (wrongResults.length === 0) return
+  const hasSpeech = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+
+  const fetchWrongTips = async (hardResults) => {
+    if (!hardResults.length) return
     setTipsLoading(true)
     const tips = {}
-    for (const { card } of wrongResults) {
+    for (const { card } of hardResults) {
+      if (tips[card.id]) continue
       try {
         const res = await fetch('/api/chat', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2540,14 +2572,25 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
   }
 
   const startSession = async () => {
-    const count = Math.min(cardCount, initCards.length)
+    const now = new Date()
+    // Filter to cards that are due (nextReview in the past or not set)
+    const dueCards = initCards.filter(card => {
+      if (card.nextReview) {
+        const nr = card.nextReview.toDate ? card.nextReview.toDate() : new Date(card.nextReview)
+        if (nr > now) return false
+      }
+      return true
+    })
+    const source = dueCards.length > 0 ? dueCards : initCards
+    const count = Math.min(cardCount, source.length)
     setKiError('')
     sessionStartRef.current = Date.now()
+    sessionAttemptsRef.current = {}
 
     if (learnMode === 'klassisch') {
-      const shuffled = [...initCards].sort(() => Math.random() - 0.5)
-      setSession(shuffled.slice(0, count))
-      setIdx(0); setFlipped(false); setResults([])
+      const shuffled = [...source].sort(() => Math.random() - 0.5).slice(0, count)
+      setQueue(shuffled); setSessionSize(shuffled.length)
+      setFlipped(false); setResults([]); setMicTranscript('')
       setPhase('session')
       return
     }
@@ -2555,14 +2598,13 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     // KI-Auswahl
     setPhase('loading')
     try {
-      const cardList = initCards.map(c => ({
+      const cardList = source.map(c => ({
         id: c.id, front: c.front,
         mastery: c.mastery || 0,
         daysSinceReview: c.lastReviewed?.seconds
-          ? Math.floor((Date.now() / 1000 - c.lastReviewed.seconds) / 86400)
-          : null,
+          ? Math.floor((Date.now() / 1000 - c.lastReviewed.seconds) / 86400) : null,
       }))
-      const prompt = `You are a learning optimizer. The user has these flashcards with mastery scores (0=never seen, 1=wrong, 2=correct once, 3=mastered): ${JSON.stringify(cardList)}. Select the ${count} most important cards to study now. Prioritize: cards never seen (mastery 0), then cards answered wrong (mastery 1), then cards not reviewed recently. Return ONLY a JSON array of card IDs in priority order: ["id1","id2",...]`
+      const prompt = `You are a learning optimizer. Select the ${count} most important flashcards to study now. Prioritize unseen (mastery 0), then wrong (mastery 1), then least recently reviewed. Cards: ${JSON.stringify(cardList)}. Return ONLY a JSON array of IDs: ["id1","id2",...]`
       const res = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 512, messages: [{ role: 'user', content: prompt }] }),
@@ -2570,50 +2612,141 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
       const data = await res.json()
       const raw = data.content?.[0]?.text || ''
       const match = raw.match(/\[[\s\S]*?\]/)
-      if (!match) throw new Error('Kein gültiges JSON')
+      if (!match) throw new Error('no JSON')
       const ids = JSON.parse(match[0])
-      const cardMap = Object.fromEntries(initCards.map(c => [c.id, c]))
+      const cardMap = Object.fromEntries(source.map(c => [c.id, c]))
       const ordered = ids.map(id => cardMap[id]).filter(Boolean)
-      const remaining = initCards.filter(c => !ids.includes(c.id))
-      setSession([...ordered, ...remaining].slice(0, count))
-    } catch (e) {
+      const remaining = source.filter(c => !ids.includes(c.id))
+      const sessionCards = [...ordered, ...remaining].slice(0, count)
+      setQueue(sessionCards); setSessionSize(sessionCards.length)
+    } catch {
       setKiError('KI-Auswahl fehlgeschlagen — klassische Reihenfolge wird verwendet.')
-      const shuffled = [...initCards].sort(() => Math.random() - 0.5)
-      setSession(shuffled.slice(0, count))
+      const shuffled = [...source].sort(() => Math.random() - 0.5).slice(0, count)
+      setQueue(shuffled); setSessionSize(shuffled.length)
     }
-    setIdx(0); setFlipped(false); setResults([])
+    setFlipped(false); setResults([]); setMicTranscript('')
     setPhase('session')
   }
 
-  const rate = async (knew) => {
-    const card = session[idx]
-    const cur = card.mastery || 0
-    const newMastery = knew
-      ? (cur === 0 ? 2 : Math.min(3, cur + 1))
-      : (cur === 0 ? 1 : Math.max(1, cur - 1))
-    try {
-      await updateDoc(doc(db, `${cardsPath}/${card.id}`), {
-        mastery: newMastery,
-        lastReviewed: serverTimestamp(),
-        wrongCount: knew ? (card.wrongCount || 0) : (card.wrongCount || 0) + 1,
-      })
-    } catch (_) {}
-    const newResults = [...results, { id: card.id, card, knew }]
+  const startMic = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR || micActive || flipped) return
+    const card = queue[0]
+    const r = new SR()
+    r.lang = 'de-DE'
+    r.interimResults = false
+    r.maxAlternatives = 5
+    r.onresult = e => {
+      const alts = Array.from(e.results[0]).map(a => a.transcript)
+      const spoken = alts[0] || ''
+      setMicTranscript(spoken)
+      setMicActive(false)
+      // Auto-flip if transcript closely matches card back
+      const norm = s => (s || '').toLowerCase().trim().replace(/[^a-z0-9äöüß]/gi, '')
+      const back = norm(card.back || '')
+      const short = norm(card.backShort || '')
+      const sp = norm(spoken)
+      if (sp && (back.includes(sp) || sp.includes(back) || (short && (short.includes(sp) || sp.includes(short))))) {
+        setFlipped(true)
+      }
+    }
+    r.onerror = () => setMicActive(false)
+    r.onend = () => setMicActive(false)
+    micRef.current = r
+    r.start()
+    setMicActive(true)
+    setMicTranscript('')
+  }
+
+  const rate = async (rating) => {
+    const card = queue[0]
+    const rest = [...queue.slice(1)]
+
+    // Track how many times this card has been processed this session
+    const attempts = (sessionAttemptsRef.current[card.id] || 0) + 1
+    sessionAttemptsRef.current[card.id] = attempts
+
+    // Build Firestore update
+    const updates = { lastReviewed: serverTimestamp() }
+
+    if (rating === 'falsch') {
+      updates.wrongCount = increment(1)
+      updates.consecutiveRight = 0
+      if (card.mastered) updates.mastered = false
+      // Re-insert at position 5 (cap at 2 re-inserts to prevent infinite loop)
+      if (attempts < 3) {
+        const insertAt = Math.min(4, rest.length)
+        rest.splice(insertAt, 0, card)
+      }
+    } else if (rating === 'fast') {
+      updates.fastCount = increment(1)
+      updates.consecutiveRight = 0
+      if (card.mastered && card.nextReview) {
+        // Halve remaining review interval for mastered cards
+        const now = Date.now()
+        const nr = card.nextReview.toDate ? card.nextReview.toDate().getTime() : new Date(card.nextReview).getTime()
+        updates.nextReview = new Date(now + Math.max(0, nr - now) / 2)
+      }
+      // Re-insert once for another chance this session
+      if (attempts < 3) {
+        const insertAt = Math.min(4, rest.length)
+        rest.splice(insertAt, 0, card)
+      }
+    } else if (rating === 'richtig') {
+      updates.rightCount = increment(1)
+      const consRight = (card.consecutiveRight || 0) + 1
+      updates.consecutiveRight = consRight
+      // Skip future sessions after repeated success
+      if (consRight >= 5) {
+        updates.nextSessionDue = new Date(Date.now() + 2 * 86400000)
+      } else if (consRight >= 3) {
+        updates.nextSessionDue = new Date(Date.now() + 86400000)
+      }
+    } else if (rating === 'easy') {
+      updates.easyCount = increment(1)
+      updates.consecutiveRight = (card.consecutiveRight || 0) + 1
+      const newEasyCount = (card.easyCount || 0) + 1
+      if (newEasyCount >= 5) {
+        // Card is MASTERED — start spaced review schedule
+        updates.mastered = true
+        if (!card.masteredAt) updates.masteredAt = serverTimestamp()
+        const mri = card.masteryReviewIndex || 0
+        const masteryDays = [30, 60, 90, 180, 180]
+        updates.masteryReviewIndex = mri + 1
+        updates.nextReview = new Date(Date.now() + (masteryDays[Math.min(mri, 4)] * 86400000))
+      } else {
+        // Spaced repetition: 1st=5d, 2nd=10d, 3rd=21d, 4th+=30d
+        const easyDays = [5, 10, 21, 30]
+        updates.nextReview = new Date(Date.now() + (easyDays[Math.min(newEasyCount - 1, 3)] * 86400000))
+      }
+    }
+
+    try { await updateDoc(doc(db, `${cardsPath}/${card.id}`), updates) } catch (_) {}
+
+    const newResults = [...results, { card, rating }]
     setResults(newResults)
-    if (idx + 1 >= session.length) {
-      setPhase('result')
-      fetchWrongTips(newResults.filter(r => !r.knew))
+    setMicTranscript('')
+
+    if (rest.length === 0) {
+      // Session complete — compute final per-card outcome (last rating wins)
       const durationMinutes = Math.round((Date.now() - (sessionStartRef.current || Date.now())) / 1000) / 60
       updateGlobalStats(uid, newResults.length, durationMinutes)
+      const lastRatingMap = {}
+      for (const r of newResults) lastRatingMap[r.card.id] = r
+      const hardCards = Object.values(lastRatingMap).filter(r => r.rating === 'falsch' || r.rating === 'fast')
+      fetchWrongTips(hardCards)
+      setQueue([])
+      setPhase('result')
     } else {
-      setIdx(i => i + 1)
+      setQueue(rest)
       setFlipped(false)
     }
   }
 
-  const repeatWrong = (wrongCards) => {
-    setSession(wrongCards)
-    setIdx(0); setFlipped(false); setResults([])
+  const repeatWrong = (cards) => {
+    sessionAttemptsRef.current = {}
+    setQueue(cards); setSessionSize(cards.length)
+    setFlipped(false); setResults([]); setMicTranscript('')
     setWrongTips({}); setTipsLoading(false)
     setPhase('session')
   }
@@ -2637,7 +2770,6 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
           </div>
 
           <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r3, padding: '26px 24px 22px', marginBottom: 14 }}>
-            {/* Card count */}
             <div style={{ marginBottom: 26 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 12 }}>Wie viele Karten?</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2648,8 +2780,6 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
                 ))}
               </div>
             </div>
-
-            {/* Mode */}
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 12 }}>Lernmodus</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2659,8 +2789,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
                 ].map(({ key, icon, label, desc }) => (
                   <button key={key} onClick={() => setLearnMode(key)} style={{
                     ...chipStyle(learnMode === key),
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    textAlign: 'left', padding: '12px 16px',
+                    display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '12px 16px',
                   }}>
                     <span style={{ fontSize: 20, flexShrink: 0 }}>{icon}</span>
                     <div>
@@ -2674,9 +2803,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
           </div>
 
           {kiError && (
-            <div style={{ fontSize: 13, color: T.red, marginBottom: 10, padding: '10px 14px', background: T.redDim, borderRadius: T.r }}>
-              {kiError}
-            </div>
+            <div style={{ fontSize: 13, color: T.red, marginBottom: 10, padding: '10px 14px', background: T.redDim, borderRadius: T.r }}>{kiError}</div>
           )}
 
           <div style={{ display: 'flex', gap: 10 }}>
@@ -2691,7 +2818,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
   // ── KI LOADING ───────────────────────────────────────────────────────────────
   if (phase === 'loading') {
     return (
-      <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="fade-in" style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 42, marginBottom: 16, color: T.acc }}>✦</div>
           <p style={{ color: T.textSub, fontSize: 14 }}>KI wählt optimale Karten aus…</p>
@@ -2702,79 +2829,86 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
 
   // ── RESULT ───────────────────────────────────────────────────────────────────
   if (phase === 'result') {
-    const wrongResults = results.filter(r => !r.knew)
-    const knewCount = results.filter(r => r.knew).length
-    const pct = Math.round(knewCount / session.length * 100)
+    // Use last rating per card (a card may have been shown multiple times)
+    const lastRatingMap = {}
+    for (const r of results) lastRatingMap[r.card.id] = r
+    const finalResults = Object.values(lastRatingMap)
+    const falschFinal  = finalResults.filter(r => r.rating === 'falsch')
+    const fastFinal    = finalResults.filter(r => r.rating === 'fast')
+    const richtigFinal = finalResults.filter(r => r.rating === 'richtig')
+    const easyFinal    = finalResults.filter(r => r.rating === 'easy')
+    const goodCount    = richtigFinal.length + easyFinal.length
+    const totalUniq    = finalResults.length
+    const pct          = totalUniq > 0 ? Math.round(goodCount / totalUniq * 100) : 0
+    const hardResults  = [...falschFinal, ...fastFinal]
+    const masteredNow  = easyFinal.filter(r => (r.card.easyCount || 0) + 1 >= 5)
+
     return (
       <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, overflowY: 'auto' }}>
         <div style={{ maxWidth: 580, margin: '0 auto', padding: '40px 20px 100px' }}>
           <div className="fade-in" style={{ textAlign: 'center', marginBottom: 28 }}>
-            <div style={{ fontSize: 52, marginBottom: 14 }}>
-              {pct >= 80 ? '🎯' : pct >= 50 ? '📈' : '💪'}
-            </div>
-            <h2 style={{ fontSize: 26, fontWeight: 800, fontFamily: "'Exo 2', sans-serif", color: T.text, marginBottom: 6 }}>
-              Session abgeschlossen
-            </h2>
-            <p style={{ color: T.textSub }}>{session.length} Karten durchgearbeitet</p>
+            <div style={{ fontSize: 52, marginBottom: 14 }}>{pct >= 80 ? '🎯' : pct >= 50 ? '📈' : '💪'}</div>
+            <h2 style={{ fontSize: 26, fontWeight: 800, fontFamily: "'Exo 2', sans-serif", color: T.text, marginBottom: 6 }}>Session abgeschlossen</h2>
+            <p style={{ color: T.textSub }}>{totalUniq} Karten bewertet</p>
           </div>
 
-          {/* Score grid */}
-          <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r2, padding: '22px 28px', marginBottom: 28 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', gap: 16, alignItems: 'center' }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 36, fontWeight: 800, color: T.green }}>{knewCount}</div>
-                <div style={{ fontSize: 11, color: T.textDim, marginTop: 6, letterSpacing: 1, textTransform: 'uppercase' }}>Gewusst</div>
-              </div>
-              <div style={{ width: 1, height: 36, background: T.border }} />
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 36, fontWeight: 800, color: T.red }}>{wrongResults.length}</div>
-                <div style={{ fontSize: 11, color: T.textDim, marginTop: 6, letterSpacing: 1, textTransform: 'uppercase' }}>Nochmal</div>
-              </div>
-              <div style={{ width: 1, height: 36, background: T.border }} />
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 36, fontWeight: 800, color: T.acc }}>{pct}%</div>
-                <div style={{ fontSize: 11, color: T.textDim, marginTop: 6, letterSpacing: 1, textTransform: 'uppercase' }}>Score</div>
-              </div>
+          {/* 4-stat score grid */}
+          <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r2, padding: '20px 16px', marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, textAlign: 'center' }}>
+              {[
+                { label: 'Falsch', count: falschFinal.length, color: T.red, icon: '❌' },
+                { label: 'Fast',   count: fastFinal.length,   color: T.amber, icon: '😕' },
+                { label: 'Richtig',count: richtigFinal.length, color: T.green, icon: '✅' },
+                { label: 'Easy',   count: easyFinal.length,   color: '#A78BFA', icon: '⚡' },
+              ].map(({ label, count, color, icon }) => (
+                <div key={label}>
+                  <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color }}>{count}</div>
+                  <div style={{ fontSize: 11, color: T.textDim, marginTop: 4, letterSpacing: 0.8, textTransform: 'uppercase' }}>{label}</div>
+                </div>
+              ))}
             </div>
+            <div style={{ marginTop: 16, height: 4, borderRadius: 2, background: T.s4, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, ${T.green}, #6EE7B7)`, borderRadius: 2, transition: 'width 0.6s' }} />
+            </div>
+            <div style={{ textAlign: 'center', fontSize: 12, color: T.textDim, marginTop: 6 }}>{pct}% richtig / easy</div>
           </div>
 
-          {/* Wrong cards + KI tips */}
-          {wrongResults.length > 0 && (
+          {/* Mastered notice */}
+          {masteredNow.length > 0 && (
+            <div style={{ background: 'rgba(147,51,234,0.1)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: T.r2, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 20 }}>⭐</span>
+              <span style={{ fontSize: 13, color: '#C4B5FD', fontWeight: 600 }}>{masteredNow.length} Karte{masteredNow.length > 1 ? 'n' : ''} gemeistert! Nächste Wiederholung in 30 Tagen.</span>
+            </div>
+          )}
+
+          {/* Hard cards + KI tips */}
+          {hardResults.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-                Nochmal üben ({wrongResults.length})
-                {tipsLoading && (
-                  <span style={{ fontSize: 12, color: T.textDim, fontWeight: 400 }}>· Merkhilfen werden geladen…</span>
-                )}
+                Noch lernen ({hardResults.length})
+                {tipsLoading && <span style={{ fontSize: 12, color: T.textDim, fontWeight: 400 }}>· Merkhilfen werden geladen…</span>}
               </div>
-              {wrongResults.map(({ card }) => (
+              {hardResults.map(({ card, rating }) => (
                 <div key={card.id} style={{
                   background: T.s2, border: `1px solid ${T.border}`,
-                  borderLeft: `3px solid ${T.red}66`,
+                  borderLeft: `3px solid ${rating === 'falsch' ? T.red : T.amber}88`,
                   borderRadius: T.r2, padding: '14px 16px', marginBottom: 10,
                 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 3 }}>{card.front}</div>
-                  <div style={{ fontSize: 13, color: T.textSub }}>
-                    {card.back}{card.backShort ? ` · ${card.backShort}` : ''}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 12 }}>{rating === 'falsch' ? '❌' : '😕'}</span>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{card.front}</div>
                   </div>
+                  <div style={{ fontSize: 13, color: T.textSub }}>{card.back}{card.backShort ? ` · ${card.backShort}` : ''}</div>
                   {wrongTips[card.id] && (
-                    <div style={{
-                      fontSize: 13, color: T.acc, lineHeight: 1.6,
-                      background: T.accDim, borderRadius: T.r,
-                      padding: '8px 12px', marginTop: 10,
-                    }}>
+                    <div style={{ fontSize: 13, color: T.acc, lineHeight: 1.6, background: T.accDim, borderRadius: T.r, padding: '8px 12px', marginTop: 10 }}>
                       {wrongTips[card.id]}
                     </div>
                   )}
                 </div>
               ))}
-
-              <Btn
-                onClick={() => repeatWrong(wrongResults.map(r => r.card))}
-                variant="ghost" full
-                style={{ marginTop: 6, padding: '12px' }}
-              >
-                🔁 Falsche Karten wiederholen ({wrongResults.length})
+              <Btn onClick={() => repeatWrong(hardResults.map(r => r.card))} variant="ghost" full style={{ marginTop: 6, padding: '12px' }}>
+                🔁 Schwierige Karten wiederholen ({hardResults.length})
               </Btn>
             </div>
           )}
@@ -2786,8 +2920,12 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
   }
 
   // ── SESSION ───────────────────────────────────────────────────────────────────
-  const card = session[idx]
-  const progress = (idx / session.length) * 100
+  const card = queue[0]
+  if (!card) return null
+  // Progress: based on cards removed from initial session (completed = sessionSize - remaining unique)
+  const uniqueRemaining = new Set(queue.map(c => c.id)).size
+  const uniqueInitial   = sessionSize
+  const progress        = uniqueInitial > 0 ? Math.max(0, (uniqueInitial - uniqueRemaining) / uniqueInitial * 100) : 0
 
   return (
     <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column' }}>
@@ -2798,14 +2936,12 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
         padding: '12px 20px',
         display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0,
       }}>
-        <Btn onClick={onClose} variant="secondary" style={{ padding: '6px 12px', fontSize: 13, flexShrink: 0 }}>
-          ✕ Beenden
-        </Btn>
+        <Btn onClick={onClose} variant="secondary" style={{ padding: '6px 12px', fontSize: 13, flexShrink: 0 }}>✕ Beenden</Btn>
         <div style={{ flex: 1, height: 6, background: T.s4, borderRadius: 3, overflow: 'hidden' }}>
           <div className="progress-fill" style={{ width: `${progress}%` }} />
         </div>
         <div style={{ fontSize: 13, fontWeight: 600, color: T.textSub, flexShrink: 0 }}>
-          {idx + 1} / {session.length}
+          {queue.length} übrig
         </div>
       </div>
 
@@ -2813,24 +2949,44 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ width: '100%', maxWidth: 580 }}>
           {/* Flashcard — CSS flip */}
-          <div className="flip-container" style={{ marginBottom: 20, cursor: flipped ? 'default' : 'pointer' }} onClick={() => !flipped && setFlipped(true)}>
+          <div className="flip-container" style={{ marginBottom: 16, cursor: flipped ? 'default' : 'pointer' }} onClick={() => !flipped && !micActive && setFlipped(true)}>
             <div className={`flip-inner${flipped ? ' flipped' : ''}`} style={{ minHeight: 260 }}>
               {/* FRONT */}
               <div className="flip-front" style={{
                 background: 'rgba(23, 30, 48, 0.8)',
                 backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
                 border: `1px solid rgba(255,255,255,0.07)`,
-                borderRadius: T.r3, padding: '52px 40px', minHeight: 260,
+                borderRadius: T.r3, padding: '48px 40px 32px', minHeight: 260,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 textAlign: 'center',
                 boxShadow: '0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)',
               }}>
                 {card.image && <img src={card.image} alt="" style={{ maxHeight: 150, maxWidth: '100%', borderRadius: 10, marginBottom: 22, objectFit: 'contain' }} />}
                 <div style={{ fontSize: 22, fontWeight: 600, color: T.text, lineHeight: 1.45 }}>{card.front || '(Bild)'}</div>
-                {card.front && card.front.trim().length <= 3 && (
-                  <PhoneticHint key={card.id} text={card.front.trim()} />
+                {card.front && card.front.trim().length <= 3 && <PhoneticHint key={card.id} text={card.front.trim()} />}
+                <div style={{ fontSize: 12, color: T.textDim, marginTop: 20, letterSpacing: 0.5 }}>Klicken zum Aufdecken</div>
+                {/* Mic button */}
+                {hasSpeech && !flipped && (
+                  <button
+                    onClick={e => { e.stopPropagation(); startMic() }}
+                    style={{
+                      marginTop: 14, display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600,
+                      background: micActive ? T.acc : T.s4,
+                      border: `1px solid ${micActive ? T.acc : T.border}`,
+                      color: micActive ? '#fff' : T.textSub,
+                      cursor: 'pointer', transition: 'all 0.15s',
+                    }}
+                  >
+                    <span style={{ fontSize: 16, animation: micActive ? 'pulse 1s infinite' : 'none' }}>🎤</span>
+                    {micActive ? 'Höre zu…' : 'Antwort sprechen'}
+                  </button>
                 )}
-                <div style={{ fontSize: 12, color: T.textDim, marginTop: card.front?.trim().length <= 3 ? 10 : 24, letterSpacing: 0.5 }}>Klicken zum Aufdecken</div>
+                {micTranscript && !flipped && (
+                  <div style={{ marginTop: 8, fontSize: 13, color: T.textSub, fontStyle: 'italic' }}>
+                    „{micTranscript}"
+                  </div>
+                )}
               </div>
               {/* BACK */}
               <div className="flip-back" style={{
@@ -2870,11 +3026,33 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
             </div>
           </div>
 
-          {/* Rating */}
+          {/* 4-button rating row */}
           {flipped && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Btn onClick={() => rate(false)} variant="danger" style={{ padding: '16px', fontSize: 16, borderRadius: T.r2 }}>✗  Nochmal</Btn>
-              <Btn onClick={() => rate(true)} variant="success" style={{ padding: '16px', fontSize: 16, borderRadius: T.r2 }}>✓  Gewusst</Btn>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+              {[
+                { rating: 'falsch', icon: '❌', label: 'Falsch',  bg: T.redDim,              border: `${T.red}44`,                 color: T.red    },
+                { rating: 'fast',   icon: '😕', label: 'Fast',    bg: T.amberDim,            border: `${T.amber}44`,               color: T.amber  },
+                { rating: 'richtig',icon: '✅', label: 'Richtig', bg: T.greenDim,            border: `${T.green}44`,               color: T.green  },
+                { rating: 'easy',   icon: '⚡', label: 'Easy',    bg: 'rgba(147,51,234,0.1)', border: 'rgba(167,139,250,0.3)',      color: '#A78BFA'},
+              ].map(({ rating, icon, label, bg, border, color }) => (
+                <button
+                  key={rating}
+                  onClick={() => rate(rating)}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    padding: '14px 8px', borderRadius: T.r2, fontSize: 13, fontWeight: 700,
+                    background: bg, border: `1px solid ${border}`, color,
+                    cursor: 'pointer', transition: 'transform 0.08s, box-shadow 0.08s',
+                    boxShadow: `0 2px 8px rgba(0,0,0,0.2)`,
+                  }}
+                  onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.95) translateY(1px)' }}
+                  onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                >
+                  <span style={{ fontSize: 20, marginBottom: 5 }}>{icon}</span>
+                  <span style={{ fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase' }}>{label}</span>
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -3439,13 +3617,35 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
     setPhase('listening')
   }
 
-  const advance = async (knew) => {
-    const cur = card.mastery || 0
-    const newMastery = knew ? Math.min(3, cur + 1) : Math.max(1, cur - 1)
-    try {
-      await updateDoc(doc(db, `${cardsPath}/${card.id}`), { mastery: newMastery, lastReviewed: serverTimestamp() })
-    } catch (_) {}
-    const newResults = [...results, { card, knew }]
+  const advance = async (rating) => {
+    // rating: 'falsch'|'fast'|'richtig'|'easy'  (or boolean for speech auto-rating)
+    const r = rating === true ? 'richtig' : rating === false ? 'falsch' : rating
+    const updates = { lastReviewed: serverTimestamp() }
+    if (r === 'falsch') {
+      updates.wrongCount = increment(1)
+      updates.consecutiveRight = 0
+    } else if (r === 'fast') {
+      updates.fastCount = increment(1)
+      updates.consecutiveRight = 0
+    } else if (r === 'richtig') {
+      updates.rightCount = increment(1)
+      updates.consecutiveRight = (card.consecutiveRight || 0) + 1
+    } else if (r === 'easy') {
+      updates.easyCount = increment(1)
+      updates.consecutiveRight = (card.consecutiveRight || 0) + 1
+      const newEasyCount = (card.easyCount || 0) + 1
+      if (newEasyCount >= 5) {
+        updates.mastered = true
+        if (!card.masteredAt) updates.masteredAt = serverTimestamp()
+        const mri = card.masteryReviewIndex || 0
+        updates.masteryReviewIndex = mri + 1
+        updates.nextReview = new Date(Date.now() + [30,60,90,180,180][Math.min(mri,4)] * 86400000)
+      } else {
+        updates.nextReview = new Date(Date.now() + [5,10,21,30][Math.min(newEasyCount-1,3)] * 86400000)
+      }
+    }
+    try { await updateDoc(doc(db, `${cardsPath}/${card.id}`), updates) } catch (_) {}
+    const newResults = [...results, { card, rating: r }]
     if (idx + 1 >= session.length) {
       const mins = Math.round((Date.now() - sessionStart.current) / 1000) / 60
       updateGlobalStats(uid, newResults.length, mins)
@@ -3467,14 +3667,27 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
 
   // ── DONE ────────────────────────────────────────────────────────────────────
   if (phase === 'done') {
-    const knew = results.filter(r => r.knew).length
-    const pct  = Math.round(knew / results.length * 100)
+    const goodCount = results.filter(r => r.rating === 'richtig' || r.rating === 'easy').length
+    const pct = Math.round(goodCount / results.length * 100)
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div className="fade-in" style={{ textAlign: 'center', maxWidth: 400 }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>{pct >= 80 ? '🌟' : pct >= 50 ? '👍' : '💪'}</div>
           <h2 style={{ fontSize: 26, fontWeight: 800, color: T.text, marginBottom: 8 }}>Super gemacht!</h2>
-          <p style={{ color: T.textSub, marginBottom: 28 }}>{knew} von {results.length} Karten richtig ({pct}%)</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 24 }}>
+            {[
+              { label: 'Falsch', count: results.filter(r => r.rating === 'falsch').length, color: T.red, icon: '❌' },
+              { label: 'Fast',   count: results.filter(r => r.rating === 'fast').length,   color: T.amber, icon: '😕' },
+              { label: 'Richtig',count: results.filter(r => r.rating === 'richtig').length, color: T.green, icon: '✅' },
+              { label: 'Easy',   count: results.filter(r => r.rating === 'easy').length,   color: '#A78BFA', icon: '⚡' },
+            ].map(({ label, count, color, icon }) => (
+              <div key={label} style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r, padding: '10px 6px', textAlign: 'center' }}>
+                <div style={{ fontSize: 16 }}>{icon}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color, marginTop: 2 }}>{count}</div>
+                <div style={{ fontSize: 10, color: T.textDim, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+              </div>
+            ))}
+          </div>
           <Btn onClick={onClose} full style={{ padding: '14px', fontSize: 16 }}>Fertig</Btn>
         </div>
       </div>
@@ -3581,14 +3794,32 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
             <div style={{ textAlign: 'center', color: T.textDim, fontSize: 13 }}>Bitte sprich deutlich…</div>
           )}
           {(phase === 'correct' || phase === 'wrong') && (
-            <Btn onClick={() => advance(phase === 'correct')} full style={{ padding: '16px', fontSize: 16 }}>
+            <Btn onClick={() => advance(phase === 'correct' ? 'richtig' : 'falsch')} full style={{ padding: '16px', fontSize: 16 }}>
               Weiter →
             </Btn>
           )}
           {phase === 'revealed' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Btn onClick={() => advance(false)} variant="danger" style={{ padding: '14px', fontSize: 15, borderRadius: T.r2 }}>✗ Nochmal</Btn>
-              <Btn onClick={() => advance(true)} variant="success" style={{ padding: '14px', fontSize: 15, borderRadius: T.r2 }}>✓ Gewusst</Btn>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+              {[
+                { rating: 'falsch', icon: '❌', label: 'Falsch',  bg: T.redDim,              border: `${T.red}44`,            color: T.red    },
+                { rating: 'fast',   icon: '😕', label: 'Fast',    bg: T.amberDim,            border: `${T.amber}44`,          color: T.amber  },
+                { rating: 'richtig',icon: '✅', label: 'Richtig', bg: T.greenDim,            border: `${T.green}44`,          color: T.green  },
+                { rating: 'easy',   icon: '⚡', label: 'Easy',    bg: 'rgba(147,51,234,0.1)', border: 'rgba(167,139,250,0.3)', color: '#A78BFA'},
+              ].map(({ rating, icon, label, bg, border, color }) => (
+                <button key={rating} onClick={() => advance(rating)} style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  padding: '14px 6px', borderRadius: T.r2, fontWeight: 700,
+                  background: bg, border: `1px solid ${border}`, color,
+                  cursor: 'pointer', transition: 'transform 0.08s',
+                }}
+                  onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.95)' }}
+                  onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                >
+                  <span style={{ fontSize: 18, marginBottom: 4 }}>{icon}</span>
+                  <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</span>
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -3932,8 +4163,8 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
     const docs = await loadDocs(path)
     const enriched = await Promise.all(
       docs.map(async d => {
-        const { groupCount, cardCount, lastStudied, masteredCount } = await enrichCategoryData(uid, d.id)
-        return { ...d, _count: groupCount, _cardCount: cardCount, _lastStudied: lastStudied, _masteredCount: masteredCount }
+        const { groupCount, cardCount, lastStudied, masteredCount, dueCount } = await enrichCategoryData(uid, d.id)
+        return { ...d, _count: groupCount, _cardCount: cardCount, _lastStudied: lastStudied, _masteredCount: masteredCount, _dueCount: dueCount }
       })
     )
     setItems(enriched)
