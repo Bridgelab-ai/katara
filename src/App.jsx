@@ -937,7 +937,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
-        background: hov ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.15)',
+        background: hov ? '#4A5070' : '#3A4060',
         border: `1px solid ${hov ? 'rgba(255,255,255,0.40)' : 'rgba(255,255,255,0.30)'}`,
         borderLeft: `3px solid ${color}`,
         boxShadow: hov
@@ -4838,7 +4838,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
     : items
 
   return (
-    <div className="app-bg" style={{ minHeight: '100vh' }}>
+    <div className="app-bg" style={{ minHeight: '100vh', background: '#2A3045' }}>
       {/* Top bar — two rows */}
       <div style={{
         background: `${T.bg}F2`, backdropFilter: 'blur(14px)',
