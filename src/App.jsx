@@ -483,32 +483,40 @@ const TtsBtn = ({ text, lang, label }) => {
 }
 
 // ─── MODAL ────────────────────────────────────────────────────────────────────
-const Modal = ({ children, onClose, width = 480 }) => (
-  <div
-    onClick={e => e.target === e.currentTarget && onClose()}
-    style={{
-      position: 'fixed', inset: 0, zIndex: 500,
-      background: 'rgba(8,11,20,0.82)',
-      backdropFilter: 'blur(4px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 20,
-    }}
-  >
+const Modal = ({ children, onClose, width = 480 }) => {
+  // Guard against mobile ghost-clicks: ignore backdrop taps within 300ms of mount
+  const mountedAt = useRef(Date.now())
+  return (
     <div
-      className="fade-in"
+      onClick={e => {
+        if (!onClose) return
+        if (Date.now() - mountedAt.current < 300) return
+        if (e.target === e.currentTarget) onClose()
+      }}
       style={{
-        width: '100%', maxWidth: width,
-        background: T.s2,
-        border: `1px solid ${T.border}`,
-        borderRadius: T.r3,
-        padding: 28,
-        boxShadow: '0 24px 60px rgba(0,0,0,0.55)',
+        position: 'fixed', inset: 0, zIndex: 500,
+        background: 'rgba(8,11,20,0.82)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
       }}
     >
-      {children}
+      <div
+        className="fade-in"
+        style={{
+          width: '100%', maxWidth: width,
+          background: T.s2,
+          border: `1px solid ${T.border}`,
+          borderRadius: T.r3,
+          padding: 28,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.55)',
+        }}
+      >
+        {children}
+      </div>
     </div>
-  </div>
-)
+  )
+}
 
 // ─── LOGO ─────────────────────────────────────────────────────────────────────
 const Logo = ({ size = 26, subtitle = false }) => (
@@ -907,9 +915,10 @@ const SectionLabel = ({ children }) => (
 const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExport, onSendToPartner, onPublicShare }) => {
   const [hov, setHov] = useState(false)
   const t = useT()
-  const groupCount   = item._count ?? 0
-  const cardCount    = item._cardCount ?? 0
+  const groupCount    = item._count ?? 0
+  const cardCount     = item._cardCount ?? 0
   const masteredCount = item._masteredCount ?? 0
+  const dueCount      = item._dueCount ?? 0
   const color = catColor(item.color || 'blue')
   const colorDim = `${color}1A`
 
@@ -969,8 +978,17 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
           <div style={{ height: 4, borderRadius: 2, background: T.border, overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${Math.round((masteredCount / cardCount) * 100)}%`, background: color, borderRadius: 2, transition: 'width 0.3s' }} />
           </div>
-          <div style={{ fontSize: 11, color: T.textDim, marginTop: 3 }}>
-            {masteredCount}/{cardCount} gemeistert
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 }}>
+            <span style={{ fontSize: 11, color: T.textDim }}>{masteredCount}/{cardCount} gemeistert</span>
+            {dueCount > 0 && (
+              <span style={{
+                fontSize: 10, fontWeight: 700, color: T.amber,
+                background: `${T.amber}1A`, border: `1px solid ${T.amber}44`,
+                borderRadius: 10, padding: '1px 7px', letterSpacing: 0.2,
+              }}>
+                {dueCount} fällig
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -3075,8 +3093,13 @@ const Empty = ({ icon, title, sub, children }) => (
 )
 
 // ─── SHARED SETUP MODAL SHELL ─────────────────────────────────────────────────
+// fileData: null | { name, type:'text', text } | { name, type:'pdf', base64 }
 const SetupModal = ({ title, subtitle, onConfirm, onClose, children, canConfirm = true }) => {
   const [generating, setGenerating] = useState(false)
+  const [fileData,   setFileData]   = useState(null)
+  const [fileErr,    setFileErr]    = useState('')
+  const fileRef = useRef(null)
+
   const chip = (active) => ({
     padding: '6px 12px', borderRadius: T.r, fontSize: 13, fontWeight: 600,
     border: `1px solid ${active ? T.acc : T.border}`,
@@ -3087,17 +3110,76 @@ const SetupModal = ({ title, subtitle, onConfirm, onClose, children, canConfirm 
   const labelEl = (text) => (
     <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>{text}</div>
   )
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setFileErr('')
+    const ext = file.name.split('.').pop().toLowerCase()
+    if (!['pdf','txt','csv'].includes(ext)) {
+      setFileErr('Nur PDF, TXT oder CSV erlaubt.')
+      return
+    }
+    try {
+      if (ext === 'pdf') {
+        const arrayBuf = await file.arrayBuffer()
+        const bytes = new Uint8Array(arrayBuf)
+        let binary = ''
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+        setFileData({ name: file.name, type: 'pdf', base64: btoa(binary) })
+      } else {
+        const text = await toText(file)
+        setFileData({ name: file.name, type: 'text', text: text.slice(0, 14000) })
+      }
+    } catch { setFileErr('Datei konnte nicht gelesen werden.') }
+  }
+
   const handle = async () => {
     setGenerating(true)
-    try { await onConfirm() } finally { setGenerating(false) }
+    try { await onConfirm(fileData) } finally { setGenerating(false) }
   }
+
   return (
     <Modal onClose={generating ? undefined : onClose} width={560}>
       <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, marginBottom: 6 }}>{title}</h3>
       <p style={{ fontSize: 13, color: T.textSub, marginBottom: 22 }}>{subtitle}</p>
       <div style={{ opacity: generating ? 0.45 : 1, pointerEvents: generating ? 'none' : 'auto' }}>
         {typeof children === 'function' ? children({ chip, labelEl }) : children}
+
+        {/* ── File upload ── */}
+        <div style={{ marginTop: 18 }}>
+          {!fileData ? (
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '9px 14px', borderRadius: T.r,
+              border: `1px dashed ${T.border}`,
+              cursor: 'pointer', transition: 'border-color 0.15s',
+              color: T.textDim, fontSize: 13,
+            }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = T.acc}
+              onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
+            >
+              <span style={{ fontSize: 16 }}>📎</span>
+              <span>Eigene Unterlagen hinzufügen <span style={{ color: T.textDim }}>(optional · PDF, TXT, CSV)</span></span>
+              <input ref={fileRef} type="file" accept=".pdf,.txt,.csv" onChange={handleFile} style={{ display: 'none' }} />
+            </label>
+          ) : (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '9px 14px', borderRadius: T.r,
+              border: `1px solid ${T.green}55`, background: `${T.green}0D`,
+              fontSize: 13,
+            }}>
+              <span style={{ fontSize: 15 }}>{fileData.type === 'pdf' ? '📄' : '📃'}</span>
+              <span style={{ color: T.green, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileData.name}</span>
+              <button onClick={() => { setFileData(null); if (fileRef.current) fileRef.current.value = '' }}
+                style={{ background: 'none', border: 'none', color: T.textDim, cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: '0 2px' }}>×</button>
+            </div>
+          )}
+          {fileErr && <div style={{ fontSize: 11, color: T.red, marginTop: 5 }}>{fileErr}</div>}
+        </div>
       </div>
+
       {generating && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10,
@@ -3121,8 +3203,8 @@ const SetupModal = ({ title, subtitle, onConfirm, onClose, children, canConfirm 
 }
 
 // ─── BERUF SETUP MODAL ────────────────────────────────────────────────────────
-const BERUF_FIELDS = ['Handwerk','IT','Medizin','Recht','Finanzen','Transport & Logistik','Gastronomie','Pädagogik','Eigene Eingabe']
-const BERUF_LEVELS = ['Azubi','Fachkraft','Meister/Techniker','Studium']
+const BERUF_FIELDS = ['Handwerk','IT','Medizin','Recht','Transport & Logistik','Gastronomie','Eigene Eingabe']
+const BERUF_LEVELS = ['Azubi','Fachkraft','Quereinstieg','Meister','Studium']
 const SETUP_COUNTRIES = ['Deutschland','Österreich','Schweiz','Andere']
 const SETUP_LANGS = [{ id:'de', label:'🇩🇪 Deutsch' },{ id:'en', label:'🇬🇧 Englisch' },{ id:'de+en', label:'Beide' }]
 
@@ -3137,7 +3219,7 @@ const BerufSetupModal = ({ onConfirm, onClose }) => {
     <SetupModal
       title="💼 Beruf einrichten"
       subtitle="KI generiert praxisnahe Lernkarten passend zu deinem Berufsfeld und Niveau."
-      onConfirm={() => onConfirm({ field: topic, level, country, lang })}
+      onConfirm={(fileData) => onConfirm({ field: topic, level, country, lang, fileData })}
       onClose={onClose}
       canConfirm={field !== 'Eigene Eingabe' || !!custom.trim()}
     >
@@ -3190,7 +3272,7 @@ const StudiumSetupModal = ({ onConfirm, onClose }) => {
     <SetupModal
       title="📚 Studium einrichten"
       subtitle="KI generiert prüfungsrelevante Lernkarten passend zu deinem Studiengang und Semester."
-      onConfirm={() => onConfirm({ studiengang: topic, semester, country, lang })}
+      onConfirm={(fileData) => onConfirm({ studiengang: topic, semester, country, lang, fileData })}
       onClose={onClose}
       canConfirm={studiengang !== 'Eigene Eingabe' || !!custom.trim()}
     >
@@ -3229,7 +3311,7 @@ const StudiumSetupModal = ({ onConfirm, onClose }) => {
 }
 
 // ─── HOBBY SETUP MODAL ────────────────────────────────────────────────────────
-const HOBBY_OPTIONS  = ['Sport','Musik','Sprachen','Kochen','Fotografie','Gaming','Kunst','Technik','Eigene Eingabe']
+const HOBBY_OPTIONS  = ['Sport','Musik','Kochen','Fotografie','Gaming','Kunst','Technik','Eigene Eingabe']
 const HOBBY_LEVELS   = ['Anfänger','Fortgeschritten','Experte']
 
 const HobbySetupModal = ({ onConfirm, onClose }) => {
@@ -3242,7 +3324,7 @@ const HobbySetupModal = ({ onConfirm, onClose }) => {
     <SetupModal
       title="🎯 Hobby einrichten"
       subtitle="KI generiert Lernkarten passend zu deinem Hobby und Erfahrungsstand."
-      onConfirm={() => onConfirm({ hobby: topic, level, lang })}
+      onConfirm={(fileData) => onConfirm({ hobby: topic, level, lang, fileData })}
       onClose={onClose}
       canConfirm={hobby !== 'Eigene Eingabe' || !!custom.trim()}
     >
@@ -3283,7 +3365,7 @@ const SchoolSetupModal = ({ onConfirm, onClose }) => {
     <SetupModal
       title="🎓 Schule einrichten"
       subtitle="KI kennt den offiziellen Lehrplan für dein Land und generiert altersgerechte Karten."
-      onConfirm={() => onConfirm(grade, lang, country)}
+      onConfirm={(fileData) => onConfirm(grade, lang, country, fileData)}
       onClose={onClose}
     >
       {({ chip, labelEl }) => (<>
@@ -3581,12 +3663,35 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
   const [phase,   setPhase]   = useState('question') // question|listening|correct|wrong|revealed|done
   const [results, setResults] = useState([])
   const [spoken,  setSpoken]  = useState('')
+  const [choices, setChoices] = useState([]) // multiple-choice options for zählen/farbe
   const sessionStart = useRef(Date.now())
 
-  const lang      = cat.schoolLang || 'de'
+  const lang       = cat.schoolLang || 'de'
   const speechLang = lang === 'en' ? 'en-GB' : 'de-DE'
-  const card      = session[idx]
-  const hasSpeech = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+  const card       = session[idx]
+  const hasSpeech  = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+
+  // Cards that use multiple-choice instead of free speech
+  const isMultiChoice = card?.type === 'zählen' || card?.type === 'farbe' || card?.type === 'zahl'
+
+  // Regenerate choices whenever the card changes
+  useEffect(() => {
+    if (!card) return
+    setPhase('question'); setSpoken('')
+    if (card.type === 'zählen' || card.type === 'zahl') {
+      const correct = typeof card.count === 'number' ? card.count : (parseInt(card.front) || 3)
+      const pool = [1,2,3,4,5,6,7,8,9,10].filter(n => n !== correct)
+      const wrong = pool.sort(() => Math.random() - 0.5).slice(0, 3)
+      setChoices([correct, ...wrong].sort(() => Math.random() - 0.5).map(String))
+    } else if (card.type === 'farbe') {
+      const correct = (card.back_de || card.front).toLowerCase()
+      const pool = ['rot','blau','grün','gelb','orange','lila','rosa','braun','schwarz','weiß'].filter(c => c !== correct)
+      const wrong = pool.sort(() => Math.random() - 0.5).slice(0, 3)
+      setChoices([correct, ...wrong].sort(() => Math.random() - 0.5))
+    } else {
+      setChoices([])
+    }
+  }, [idx]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const normalise = s => (s || '').toLowerCase().trim().replace(/[^a-z0-9äöüß]/gi, '')
 
@@ -3598,6 +3703,14 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
     if (lang === 'en')    return sp === en || en.startsWith(sp) || sp.includes(en)
     if (lang === 'de+en') return sp === de || sp === en || de.startsWith(sp) || en.startsWith(sp)
     return sp === de || de.startsWith(sp) || sp.includes(de)
+  }
+
+  const pickChoice = (val) => {
+    const correct = card.type === 'zählen' || card.type === 'zahl'
+      ? String(typeof card.count === 'number' ? card.count : parseInt(card.front) || 3)
+      : (card.back_de || card.front).toLowerCase()
+    setSpoken(val)
+    setPhase(val.toLowerCase() === correct.toLowerCase() ? 'correct' : 'wrong')
   }
 
   const startListening = () => {
@@ -3696,13 +3809,222 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
 
   // ── SESSION ──────────────────────────────────────────────────────────────────
   const progress = idx / session.length * 100
-  const bgColor  = phase === 'correct' ? '#0D2E1E' : phase === 'wrong' ? '#2E0D0D' : T.s1
-  const borderColor = phase === 'correct' ? T.green : phase === 'wrong' ? T.red : T.border
+  const cardType = card.type || (card.color ? 'farbe' : card.shape ? 'form' : card.emoji ? 'bild' : 'buchstabe')
+
+  // TTS helper: speaks text at slow rate with given lang
+  const speak = (text, lng, e) => {
+    if (e) e.stopPropagation()
+    const ss = window.speechSynthesis
+    if (!ss || !text) return
+    ss.cancel()
+    const u = new SpeechSynthesisUtterance(text)
+    u.lang = lng; u.rate = 0.7
+    setTimeout(() => ss.speak(u), 80)
+  }
+
+  // German and English words for the card
+  const wordDe = card.back_de || card.back || card.front
+  const wordEn = card.back_en || card.front
+
+  // Phase-based feedback colors
+  const feedbackBg    = phase === 'correct' ? '#0D2E1E' : phase === 'wrong' ? '#2E0D0D' : 'rgba(20,26,42,0.85)'
+  const feedbackBorder = phase === 'correct' ? T.green    : phase === 'wrong' ? T.red    : 'rgba(255,255,255,0.07)'
+
+  // The two TTS buttons shown on every card
+  const PronButtons = ({ deText, enText }) => (
+    <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 24 }}>
+      <button
+        onClick={e => speak(deText || wordDe, 'de-DE', e)}
+        style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+          padding: '10px 20px', borderRadius: T.r2, cursor: 'pointer',
+          background: 'rgba(79,142,247,0.12)', border: `1px solid ${T.acc}55`,
+          color: T.acc, fontWeight: 700, fontSize: 14, transition: 'all 0.12s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = T.accDim }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(79,142,247,0.12)' }}
+      >
+        <span style={{ fontSize: 22 }}>🇩🇪</span>
+        <span style={{ fontSize: 11, letterSpacing: 0.3 }}>Deutsch</span>
+      </button>
+      <button
+        onClick={e => speak(enText || wordEn, 'en-GB', e)}
+        style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+          padding: '10px 20px', borderRadius: T.r2, cursor: 'pointer',
+          background: 'rgba(52,211,153,0.1)', border: `1px solid ${T.green}55`,
+          color: T.green, fontWeight: 700, fontSize: 14, transition: 'all 0.12s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = T.greenDim }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(52,211,153,0.1)' }}
+      >
+        <span style={{ fontSize: 22 }}>🇬🇧</span>
+        <span style={{ fontSize: 11, letterSpacing: 0.3 }}>English</span>
+      </button>
+    </div>
+  )
+
+  // SVG shapes for 'form' type
+  const ShapeSvg = ({ shape }) => {
+    const s = (shape || '').toLowerCase()
+    const shapeEl = s === 'kreis' || s === 'circle'
+      ? <circle cx="60" cy="60" r="50" fill={T.acc} opacity="0.85" />
+      : s === 'dreieck' || s === 'triangle'
+      ? <polygon points="60,8 112,110 8,110" fill={T.amber} opacity="0.85" />
+      : s === 'stern' || s === 'star'
+      ? <polygon points="60,5 72,40 110,40 80,62 92,98 60,75 28,98 40,62 10,40 48,40" fill="#FBBF24" opacity="0.9" />
+      : s === 'herz' || s === 'heart'
+      ? <path d="M60 100 C20 70 5 50 5 35 A25 25 0 0 1 60 25 A25 25 0 0 1 115 35 C115 50 100 70 60 100Z" fill={T.red} opacity="0.85" />
+      : s === 'raute' || s === 'diamond'
+      ? <polygon points="60,5 115,60 60,115 5,60" fill="#A78BFA" opacity="0.85" />
+      : /* default rectangle */ <rect x="5" y="25" width="110" height="70" rx="8" fill={T.green} opacity="0.85" />
+    return (
+      <svg width="120" height="120" viewBox="0 0 120 120" style={{ display: 'block', margin: '0 auto' }}>
+        {shapeEl}
+      </svg>
+    )
+  }
+
+  // Color swatch for 'farbe' type
+  const COLOR_MAP = {
+    rot: '#EF4444', rot_en: 'red',
+    blau: '#3B82F6', blau_en: 'blue',
+    grün: '#22C55E', grün_en: 'green',
+    gelb: '#EAB308', gelb_en: 'yellow',
+    orange: '#F97316', orange_en: 'orange',
+    lila: '#A855F7', lila_en: 'purple',
+    rosa: '#EC4899', rosa_en: 'pink',
+    schwarz: '#1F2937', schwarz_en: 'black',
+    weiß: '#F9FAFB', weiß_en: 'white',
+    braun: '#92400E', braun_en: 'brown',
+  }
+  const colorKey = Object.keys(COLOR_MAP).find(k => !k.endsWith('_en') && (
+    (card.front || '').toLowerCase().includes(k) || (card.back || '').toLowerCase().includes(k)
+  ))
+  const swatchColor = card.colorHex || (colorKey ? COLOR_MAP[colorKey] : T.acc)
+
+  // ── CARD VISUAL by type ───────────────────────────────────────────────────────
+  const CardVisual = ({ showAnswer = false }) => {
+    if (cardType === 'zählen') {
+      // Show the emoji repeated `count` times, large, wrapped
+      const countNum = typeof card.count === 'number' ? card.count : 3
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
+            gap: 6, maxWidth: 280, lineHeight: 1,
+          }}>
+            {Array.from({ length: Math.min(countNum, 10) }).map((_, i) => (
+              <span key={i} style={{ fontSize: countNum <= 5 ? 64 : 48 }}>{card.emoji || '⭐'}</span>
+            ))}
+          </div>
+          {showAnswer && (
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 40, fontWeight: 900, color: T.green, lineHeight: 1 }}>{countNum}</div>
+              <div style={{ fontSize: 20, color: T.textSub, marginTop: 6, fontWeight: 600 }}>
+                {wordDe}{wordEn && wordEn !== wordDe ? ` · ${wordEn}` : ''}
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+    if (cardType === 'zahl') {
+      // Show the digit very large + emoji repeated count times below
+      const countNum = typeof card.count === 'number' ? card.count : parseInt(card.front) || 1
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+          <div style={{
+            fontSize: 'clamp(100px, 22vw, 160px)', fontWeight: 900, lineHeight: 1,
+            color: T.text, textShadow: `0 0 40px ${T.acc}44`,
+          }}>{card.front}</div>
+          {card.emoji && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 4 }}>
+              {Array.from({ length: Math.min(countNum, 10) }).map((_, i) => (
+                <span key={i} style={{ fontSize: 36 }}>{card.emoji}</span>
+              ))}
+            </div>
+          )}
+          {showAnswer && (
+            <div style={{ fontSize: 22, color: T.textSub, fontWeight: 600, marginTop: 4 }}>
+              {wordDe}{wordEn && wordEn !== wordDe ? ` · ${wordEn}` : ''}
+            </div>
+          )}
+        </div>
+      )
+    }
+    if (cardType === 'farbe') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+          <div style={{
+            width: 110, height: 110, borderRadius: 20,
+            background: swatchColor,
+            boxShadow: `0 0 40px ${swatchColor}88, 0 6px 20px rgba(0,0,0,0.4)`,
+            border: '3px solid rgba(255,255,255,0.18)',
+          }} />
+          {showAnswer && (
+            <>
+              <div style={{ fontSize: 36, fontWeight: 800, color: T.text, lineHeight: 1 }}>{wordDe}</div>
+              {wordEn && wordEn !== wordDe && (
+                <div style={{ fontSize: 22, color: T.textSub, fontWeight: 600 }}>{wordEn}</div>
+              )}
+            </>
+          )}
+        </div>
+      )
+    }
+    if (cardType === 'form') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+          <ShapeSvg shape={card.shape || card.front} />
+          {showAnswer && (
+            <>
+              <div style={{ fontSize: 36, fontWeight: 800, color: T.text }}>{wordDe}</div>
+              {wordEn && wordEn !== wordDe && (
+                <div style={{ fontSize: 22, color: T.textSub, fontWeight: 600 }}>{wordEn}</div>
+              )}
+            </>
+          )}
+        </div>
+      )
+    }
+    if (cardType === 'bild' || card.emoji || card.image) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+          {card.image && card.image.startsWith('http')
+            ? <img src={card.image} alt={card.front} style={{ width: 120, height: 120, objectFit: 'contain', borderRadius: 18 }} />
+            : <div style={{ fontSize: 96, lineHeight: 1 }}>{card.emoji}</div>
+          }
+          <div style={{ fontSize: 34, fontWeight: 800, color: T.text, lineHeight: 1.2 }}>{wordDe}</div>
+          {wordEn && wordEn !== wordDe && (
+            <div style={{ fontSize: 22, color: T.textSub, fontWeight: 600 }}>{wordEn}</div>
+          )}
+        </div>
+      )
+    }
+    // buchstabe — very large single character
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+        <div style={{
+          fontSize: 'clamp(100px, 22vw, 160px)', fontWeight: 900, lineHeight: 1,
+          color: T.text, textShadow: `0 0 40px ${T.acc}44`,
+        }}>{card.front}</div>
+        {card.emoji && (
+          <div style={{ fontSize: 56, lineHeight: 1 }}>{card.emoji}</div>
+        )}
+        {showAnswer && (
+          <div style={{ fontSize: 24, color: T.textSub, fontWeight: 600, marginTop: 4 }}>
+            {wordDe}{wordEn && wordEn !== wordDe ? ` · ${wordEn}` : ''}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: T.bg, display: 'flex', flexDirection: 'column' }}>
       {/* Top bar */}
-      <div style={{ background: `${T.bg}EE`, borderBottom: `1px solid ${T.border}`, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+      <div style={{ background: `${T.bg}EE`, backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}`, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
         <Btn onClick={onClose} variant="secondary" style={{ padding: '6px 12px', fontSize: 13, flexShrink: 0 }}>✕ Beenden</Btn>
         <div style={{ flex: 1, height: 6, background: T.s4, borderRadius: 3, overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${progress}%`, background: T.acc, borderRadius: 3, transition: 'width 0.3s' }} />
@@ -3710,58 +4032,137 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
         <div style={{ fontSize: 13, fontWeight: 600, color: T.textSub, flexShrink: 0 }}>{idx + 1} / {session.length}</div>
       </div>
 
-      {/* Card area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      {/* Scrollable card area */}
+      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 20px' }}>
         <div style={{ width: '100%', maxWidth: 480 }}>
-          {/* Flash card */}
+
+          {/* ── Main card ─────────────────────────────────────────────────────── */}
           <div className="fade-in" style={{
-            background: bgColor, border: `2px solid ${borderColor}`,
-            borderRadius: 20, padding: '48px 32px',
+            background: feedbackBg,
+            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            border: `2px solid ${feedbackBorder}`,
+            borderRadius: 24, padding: '48px 32px 40px',
             display: 'flex', flexDirection: 'column', alignItems: 'center',
             textAlign: 'center', marginBottom: 20,
-            transition: 'background 0.3s, border-color 0.3s',
-            minHeight: 280,
+            transition: 'background 0.25s, border-color 0.25s',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
           }}>
-            {/* Emoji (big visual) */}
-            {card.emoji && (
-              <div style={{ fontSize: 72, marginBottom: 16, lineHeight: 1 }}>{card.emoji}</div>
-            )}
-            {/* Front word */}
-            <div style={{ fontSize: card.emoji ? 28 : 40, fontWeight: 800, color: T.text, lineHeight: 1.2, marginBottom: 8 }}>
-              {card.front}
-            </div>
-            {/* Phase indicator */}
-            {phase === 'listening' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, color: T.acc, fontSize: 14, fontWeight: 600 }}>
-                <span style={{ width: 10, height: 10, borderRadius: '50%', background: T.acc, animation: 'pulse 1s infinite' }} />
-                Ich höre zu…
-              </div>
-            )}
-            {phase === 'correct' && (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: 32, marginBottom: 6 }}>✓</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: T.green }}>{getAnswer()}</div>
-                {spoken && <div style={{ fontSize: 13, color: T.textDim, marginTop: 6 }}>Du hast gesagt: „{spoken}"</div>}
-              </div>
-            )}
-            {phase === 'wrong' && (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: 32, marginBottom: 6 }}>✗</div>
-                {spoken && <div style={{ fontSize: 14, color: T.textDim, marginBottom: 6 }}>Du hast gesagt: „{spoken}"</div>}
-                <div style={{ fontSize: 13, color: T.textSub }}>Richtige Antwort:</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: T.red, marginTop: 4 }}>{getAnswer()}</div>
-              </div>
-            )}
-            {phase === 'revealed' && (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: 13, color: T.textSub, marginBottom: 6 }}>Antwort:</div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: T.text }}>{getAnswer()}</div>
-              </div>
-            )}
+
+            {/* Question visual */}
+            {phase === 'question' || phase === 'listening' ? (
+              <>
+                <CardVisual showAnswer={false} />
+                {/* Counting question label */}
+                {(cardType === 'zählen') && (
+                  <div style={{ fontSize: 22, fontWeight: 700, color: T.textSub, marginTop: 20 }}>
+                    Wie viele sind es?
+                  </div>
+                )}
+                {/* Color question label */}
+                {cardType === 'farbe' && (
+                  <div style={{ fontSize: 22, fontWeight: 700, color: T.textSub, marginTop: 20 }}>
+                    Welche Farbe ist das?
+                  </div>
+                )}
+                {!isMultiChoice && <PronButtons deText={wordDe} enText={wordEn} />}
+                {phase === 'listening' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 24, color: T.acc, fontSize: 14, fontWeight: 600 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: T.acc, display: 'inline-block', animation: 'spin 1s linear infinite' }} />
+                    Ich höre zu…
+                  </div>
+                )}
+              </>
+            ) : phase === 'correct' ? (
+              <>
+                <CardVisual showAnswer={true} />
+                <div style={{ marginTop: 20, fontSize: 44 }}>✅</div>
+                {spoken && (
+                  <div style={{ fontSize: 14, color: T.textDim, marginTop: 8 }}>
+                    {isMultiChoice ? `Richtig! ${spoken}` : `„${spoken}"`}
+                  </div>
+                )}
+                <PronButtons deText={wordDe} enText={wordEn} />
+              </>
+            ) : phase === 'wrong' ? (
+              <>
+                <CardVisual showAnswer={true} />
+                <div style={{ marginTop: 20, fontSize: 44 }}>❌</div>
+                {spoken && (
+                  <div style={{ fontSize: 14, color: T.textDim, marginTop: 6 }}>
+                    {isMultiChoice ? `Du hast ${spoken} gewählt.` : `Du sagtest: „${spoken}"`}
+                  </div>
+                )}
+                <div style={{ fontSize: 16, color: T.red, fontWeight: 700, marginTop: 8 }}>
+                  Richtig: {getAnswer()}
+                </div>
+                <PronButtons deText={wordDe} enText={wordEn} />
+              </>
+            ) : phase === 'revealed' ? (
+              <>
+                <CardVisual showAnswer={true} />
+                <PronButtons deText={wordDe} enText={wordEn} />
+              </>
+            ) : null}
           </div>
 
-          {/* Buttons */}
-          {phase === 'question' && (
+          {/* ── Action buttons ──────────────────────────────────────────────────── */}
+          {phase === 'question' && isMultiChoice && choices.length === 4 && (
+            /* Multiple-choice grid for zählen / farbe / zahl */
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {choices.map(val => {
+                  const isColorChoice = cardType === 'farbe'
+                  const COLOR_HEX_MAP = {
+                    rot:'#EF4444',blau:'#3B82F6',grün:'#22C55E',gelb:'#EAB308',
+                    orange:'#F97316',lila:'#A855F7',rosa:'#EC4899',braun:'#92400E',
+                    schwarz:'#374151',weiß:'#F9FAFB',
+                  }
+                  return (
+                    <button
+                      key={val}
+                      onClick={() => pickChoice(val)}
+                      style={{
+                        padding: '20px 12px', borderRadius: T.r2, cursor: 'pointer',
+                        border: `2px solid ${T.border}`,
+                        background: isColorChoice ? `${COLOR_HEX_MAP[val] || T.s3}22` : T.s3,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                        transition: 'transform 0.08s, border-color 0.12s',
+                      }}
+                      onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.95)' }}
+                      onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                      onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = T.acc }}
+                    >
+                      {isColorChoice && (
+                        <div style={{
+                          width: 44, height: 44, borderRadius: 10,
+                          background: COLOR_HEX_MAP[val] || T.s4,
+                          border: '2px solid rgba(255,255,255,0.2)',
+                        }} />
+                      )}
+                      <span style={{
+                        fontSize: isColorChoice ? 18 : 36,
+                        fontWeight: 800,
+                        color: isColorChoice ? T.text : T.text,
+                      }}>{val}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {/* Mic as secondary option */}
+              {hasSpeech && (
+                <button onClick={startListening} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  width: '100%', marginTop: 12, padding: '12px', borderRadius: T.r2,
+                  background: 'transparent', border: `1px solid ${T.border}`,
+                  color: T.textDim, fontSize: 13, cursor: 'pointer',
+                }}>
+                  🎤 Sprechen
+                </button>
+              )}
+            </div>
+          )}
+          {phase === 'question' && !isMultiChoice && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {hasSpeech && (
                 <button
@@ -3781,7 +4182,7 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
                 onClick={() => setPhase('revealed')}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: '100%', padding: '13px', borderRadius: T.r2,
+                  width: '100%', padding: '14px', borderRadius: T.r2,
                   background: T.s3, border: `1px solid ${T.border}`,
                   color: T.textSub, fontSize: 14, fontWeight: 600, cursor: 'pointer',
                 }}
@@ -3791,7 +4192,7 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
             </div>
           )}
           {phase === 'listening' && (
-            <div style={{ textAlign: 'center', color: T.textDim, fontSize: 13 }}>Bitte sprich deutlich…</div>
+            <div style={{ textAlign: 'center', color: T.textDim, fontSize: 13, padding: '10px 0' }}>Bitte sprich deutlich und klar…</div>
           )}
           {(phase === 'correct' || phase === 'wrong') && (
             <Btn onClick={() => advance(phase === 'correct' ? 'richtig' : 'falsch')} full style={{ padding: '16px', fontSize: 16 }}>
@@ -3799,28 +4200,44 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
             </Btn>
           )}
           {phase === 'revealed' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
-              {[
-                { rating: 'falsch', icon: '❌', label: 'Falsch',  bg: T.redDim,              border: `${T.red}44`,            color: T.red    },
-                { rating: 'fast',   icon: '😕', label: 'Fast',    bg: T.amberDim,            border: `${T.amber}44`,          color: T.amber  },
-                { rating: 'richtig',icon: '✅', label: 'Richtig', bg: T.greenDim,            border: `${T.green}44`,          color: T.green  },
-                { rating: 'easy',   icon: '⚡', label: 'Easy',    bg: 'rgba(147,51,234,0.1)', border: 'rgba(167,139,250,0.3)', color: '#A78BFA'},
-              ].map(({ rating, icon, label, bg, border, color }) => (
-                <button key={rating} onClick={() => advance(rating)} style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  padding: '14px 6px', borderRadius: T.r2, fontWeight: 700,
-                  background: bg, border: `1px solid ${border}`, color,
-                  cursor: 'pointer', transition: 'transform 0.08s',
-                }}
-                  onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.95)' }}
-                  onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)' }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+            <>
+              {/* Mic button above rating row */}
+              {hasSpeech && (
+                <button
+                  onClick={startListening}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    width: '100%', padding: '13px', borderRadius: T.r2, marginBottom: 10,
+                    background: T.s3, border: `1px solid ${T.border}`,
+                    color: T.textSub, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  }}
                 >
-                  <span style={{ fontSize: 18, marginBottom: 4 }}>{icon}</span>
-                  <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</span>
+                  🎤 Nochmal sprechen
                 </button>
-              ))}
-            </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+                {[
+                  { rating: 'falsch', icon: '❌', label: 'Falsch',  bg: T.redDim,              border: `${T.red}44`,            color: T.red    },
+                  { rating: 'fast',   icon: '😕', label: 'Fast',    bg: T.amberDim,            border: `${T.amber}44`,          color: T.amber  },
+                  { rating: 'richtig',icon: '✅', label: 'Richtig', bg: T.greenDim,            border: `${T.green}44`,          color: T.green  },
+                  { rating: 'easy',   icon: '⚡', label: 'Easy',    bg: 'rgba(147,51,234,0.1)', border: 'rgba(167,139,250,0.3)', color: '#A78BFA'},
+                ].map(({ rating, icon, label, bg, border, color }) => (
+                  <button key={rating} onClick={() => advance(rating)} style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    padding: '14px 6px', borderRadius: T.r2, fontWeight: 700,
+                    background: bg, border: `1px solid ${border}`, color,
+                    cursor: 'pointer', transition: 'transform 0.08s',
+                  }}
+                    onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.95)' }}
+                    onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                  >
+                    <span style={{ fontSize: 18, marginBottom: 4 }}>{icon}</span>
+                    <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -4131,6 +4548,137 @@ const LoginScreen = () => {
   )
 }
 
+// ─── PROGRESS DASHBOARD ───────────────────────────────────────────────────────
+const ProgressDashboard = ({ streak, totalCards, weeklyMinutes, items, loading }) => {
+  const [open, setOpen] = useState(false)
+
+  const totalMastered = items.reduce((s, i) => s + (i._masteredCount || 0), 0)
+  const totalDue      = items.reduce((s, i) => s + (i._dueCount || 0), 0)
+  const totalCards_   = items.reduce((s, i) => s + (i._cardCount || 0), 0)
+
+  // Only show the collapsed bar if there's something to display
+  const hasData = streak > 0 || totalCards > 0 || weeklyMinutes > 0 || totalMastered > 0
+
+  if (loading || !hasData) return null
+
+  const stat = (icon, value, label, color = T.textSub) => (
+    <div style={{ textAlign: 'center', padding: '12px 8px', minWidth: 72 }}>
+      <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 10, color: T.textDim, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.6, lineHeight: 1.3 }}>{label}</div>
+    </div>
+  )
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      {/* Collapsed bar — always visible */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 16px', borderRadius: open ? `${T.r2} ${T.r2} 0 0` : T.r2,
+          background: T.s2, border: `1px solid ${T.border}`,
+          borderBottom: open ? `1px solid ${T.border}` : undefined,
+          cursor: 'pointer', transition: 'all 0.15s',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          {streak > 0 && (
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.amber }}>
+              🔥 {streak} {streak === 1 ? 'Tag' : 'Tage'}
+            </span>
+          )}
+          {totalDue > 0 && (
+            <span style={{
+              fontSize: 12, fontWeight: 700, color: T.amber,
+              background: `${T.amber}1A`, border: `1px solid ${T.amber}44`,
+              borderRadius: 10, padding: '2px 9px',
+            }}>
+              {totalDue} fällig heute
+            </span>
+          )}
+          {totalMastered > 0 && (
+            <span style={{ fontSize: 12, color: T.textDim }}>
+              ⭐ <span style={{ color: T.textSub }}>{totalMastered} gemeistert</span>
+            </span>
+          )}
+          {totalCards > 0 && !totalDue && !totalMastered && (
+            <span style={{ fontSize: 12, color: T.textDim }}>
+              📚 <span style={{ color: T.textSub }}>{totalCards.toLocaleString('de-DE')} gelernt</span>
+            </span>
+          )}
+        </div>
+        <span style={{ fontSize: 11, color: T.textDim, transition: 'transform 0.15s', display: 'inline-block', transform: open ? 'rotate(180deg)' : 'none' }}>▼</span>
+      </button>
+
+      {/* Expanded panel */}
+      {open && (
+        <div style={{
+          background: T.s2, border: `1px solid ${T.border}`, borderTop: 'none',
+          borderRadius: `0 0 ${T.r2} ${T.r2}`,
+          padding: '4px 8px 16px',
+        }}>
+          {/* 4-stat grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, marginBottom: 12 }}>
+            {stat('🔥', streak, 'Streak', T.amber)}
+            {stat('⭐', totalMastered, 'Gemeistert', '#A78BFA')}
+            {stat('📅', totalDue, 'Fällig heute', totalDue > 0 ? T.amber : T.textSub)}
+            {stat('📚', totalCards.toLocaleString('de-DE'), 'Gesamt gelernt', T.acc)}
+          </div>
+
+          {/* Weekly bar */}
+          {weeklyMinutes > 0 && (
+            <div style={{ padding: '0 8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                <span style={{ fontSize: 11, color: T.textDim }}>Diese Woche</span>
+                <span style={{ fontSize: 11, color: T.textSub, fontWeight: 600 }}>{weeklyMinutes} Min</span>
+              </div>
+              <div style={{ height: 4, borderRadius: 2, background: T.s4, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.min(100, Math.round(weeklyMinutes / 3))}%`,
+                  background: `linear-gradient(90deg, ${T.acc}, #7BB8FF)`,
+                  borderRadius: 2, transition: 'width 0.5s',
+                }} />
+              </div>
+              <div style={{ fontSize: 10, color: T.textDim, marginTop: 3 }}>Ziel: 300 Min / Woche</div>
+            </div>
+          )}
+
+          {/* Category mastery breakdown */}
+          {totalCards_ > 0 && (
+            <div style={{ padding: '12px 8px 0' }}>
+              <div style={{ fontSize: 10, color: T.textDim, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 }}>
+                Fortschritt pro Kategorie
+              </div>
+              {items.filter(i => (i._cardCount || 0) > 0).map(item => {
+                const color = catColor(item.color || 'blue')
+                const pct = item._cardCount > 0 ? Math.round((item._masteredCount || 0) / item._cardCount * 100) : 0
+                return (
+                  <div key={item.id} style={{ marginBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                      <span style={{ fontSize: 11, color: T.textSub, fontWeight: 600 }}>{item.name}</span>
+                      <span style={{ fontSize: 11, color: T.textDim }}>
+                        {item._masteredCount || 0}/{item._cardCount || 0}
+                        {(item._dueCount || 0) > 0 && (
+                          <span style={{ color: T.amber, marginLeft: 6 }}>· {item._dueCount} fällig</span>
+                        )}
+                      </span>
+                    </div>
+                    <div style={{ height: 3, borderRadius: 2, background: T.s4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.4s' }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── HOME SCREEN (Level 1: Hauptkategorien) ───────────────────────────────────
 const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, weeklyMinutes = 0 }) => {
   const [items,       setItems]       = useState([])
@@ -4183,16 +4731,29 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
   }
 
   // Shared: create category + generate KI cards + navigate in
-  const createWithKI = async (name, color, prompt, extra = {}) => {
+  // fileData: null | { name, type:'text', text } | { name, type:'pdf', base64 }
+  const createWithKI = async (name, color, prompt, extra = {}, fileData = null) => {
     try {
       const ref = await addDoc(collection(db, path), {
         name, color: color || 'blue', ...extra,
         createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       })
       const newCat = { id: ref.id, name, color: color || 'blue', ...extra }
+      // Build message content — prepend uploaded file if present
+      let messageContent
+      if (fileData?.type === 'pdf') {
+        messageContent = [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileData.base64 } },
+          { type: 'text', text: `Nutze das obige Dokument als zusätzlichen Kontext für die Kartengeneration.\n\n${prompt}` },
+        ]
+      } else if (fileData?.type === 'text') {
+        messageContent = `Zusätzliche Unterlagen des Nutzers:\n---\n${fileData.text}\n---\n\nNutze diese Unterlagen als zusätzlichen Kontext.\n\n${prompt}`
+      } else {
+        messageContent = prompt
+      }
       const res = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 4000, messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 4000, messages: [{ role: 'user', content: messageContent }] }),
       })
       const data = await res.json()
       const raw  = (data.content?.[0]?.text || '').replace(/```(?:json)?/gi,'').replace(/```/g,'').trim()
@@ -4200,9 +4761,19 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
       if (m) {
         const cards = JSON.parse(m[0])
         const cardsPath = `${path}/${ref.id}/cards`
+        const isVorschuleCard = extra.schoolGrade === 'Vorschule'
         for (const c of Array.isArray(cards) ? cards : []) {
           await addDoc(collection(db, cardsPath), {
             front: c.front || '', back: c.back || '', backShort: c.backShort || '',
+            ...(isVorschuleCard && {
+              type:     c.type     || 'bild',
+              back_de:  c.back_de  || c.back || '',
+              back_en:  c.back_en  || '',
+              emoji:    c.emoji    || null,
+              count:    typeof c.count === 'number' ? c.count : null,
+              colorHex: c.colorHex || null,
+              shape:    c.shape    || null,
+            }),
             image: null, correctCount: 0, wrongCount: 0,
             mastery: 0, lastReviewed: null, createdAt: serverTimestamp(),
           })
@@ -4317,26 +4888,14 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
       </div>
 
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
-        {/* Stats strip */}
-        {(streak > 0 || totalCards > 0 || weeklyMinutes > 0) && (
-          <div style={{ display: 'flex', gap: 20, marginBottom: 16, flexWrap: 'wrap' }}>
-            {streak > 0 && (
-              <span style={{ fontSize: 12, color: T.textDim }}>
-                🔥 <span style={{ color: T.textSub }}>{streak} {streak === 1 ? 'Tag' : 'Tage'}</span>
-              </span>
-            )}
-            {totalCards > 0 && (
-              <span style={{ fontSize: 12, color: T.textDim }}>
-                📚 <span style={{ color: T.textSub }}>{totalCards.toLocaleString('de-DE')} Karten gelernt</span>
-              </span>
-            )}
-            {weeklyMinutes > 0 && (
-              <span style={{ fontSize: 12, color: T.textDim }}>
-                ⏱ <span style={{ color: T.textSub }}>{weeklyMinutes} Min diese Woche</span>
-              </span>
-            )}
-          </div>
-        )}
+        {/* Progress Dashboard */}
+        <ProgressDashboard
+          streak={streak}
+          totalCards={totalCards}
+          weeklyMinutes={weeklyMinutes}
+          items={items}
+          loading={loading}
+        />
         {/* Search */}
         {!loading && items.length > 0 && (
           <div style={{ position: 'relative', marginBottom: 20 }}>
@@ -4433,43 +4992,59 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
       </div>
 
       {modal       && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
-      {berufSetup && <BerufSetupModal onConfirm={async ({ field, level, country, lang }) => {
+      {berufSetup && <BerufSetupModal onConfirm={async ({ field, level, country, lang, fileData }) => {
         const langLabel = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
         const prompt = `Du bist ein erfahrener Ausbilder und Berufsschullehrer in ${country}. Erstelle 15 praxisnahe Lernkarten für das Berufsfeld "${field}" auf Niveau "${level}".
 Lernsprache: ${langLabel}. Decke wichtige Fachbegriffe, Prozesse, Vorschriften und Kernkonzepte ab, die in Prüfungen und im Berufsalltag relevant sind.
 Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
 [{"front":"...","back":"...","backShort":"..."}]`
-        await createWithKI('Beruf', 'blue', prompt)
+        await createWithKI('Beruf', 'blue', prompt, {}, fileData)
         setBerufSetup(false)
       }} onClose={() => setBerufSetup(false)} />}
-      {studiumSetup && <StudiumSetupModal onConfirm={async ({ studiengang, semester, country, lang }) => {
+      {studiumSetup && <StudiumSetupModal onConfirm={async ({ studiengang, semester, country, lang, fileData }) => {
         const langLabel = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
         const prompt = `Du bist ein erfahrener Hochschuldozent in ${country}. Erstelle 15 prüfungsrelevante Lernkarten für das Studium "${studiengang}", Semester ${semester}.
 Lernsprache: ${langLabel}. Decke die wichtigsten Konzepte, Fachbegriffe, Theorien und Methoden ab, die in Klausuren und mündlichen Prüfungen häufig abgefragt werden.
 Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
 [{"front":"...","back":"...","backShort":"..."}]`
-        await createWithKI('Studium', 'green', prompt)
+        await createWithKI('Studium', 'green', prompt, {}, fileData)
         setStudiumSetup(false)
       }} onClose={() => setStudiumSetup(false)} />}
-      {hobbySetup && <HobbySetupModal onConfirm={async ({ hobby, level, lang }) => {
+      {hobbySetup && <HobbySetupModal onConfirm={async ({ hobby, level, lang, fileData }) => {
         const langLabel = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
         const prompt = `Du bist ein begeisterter Experte für "${hobby}". Erstelle 15 motivierende Lernkarten für Niveau "${level}".
 Lernsprache: ${langLabel}. Decke praktische Tipps, wichtige Begriffe, Techniken und interessante Fakten zum Hobby ab.
 Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
 [{"front":"...","back":"...","backShort":"..."}]`
-        await createWithKI('Hobby', 'amber', prompt)
+        await createWithKI('Hobby', 'amber', prompt, {}, fileData)
         setHobbySetup(false)
       }} onClose={() => setHobbySetup(false)} />}
-      {schoolSetup && <SchoolSetupModal onConfirm={async (grade, lang, country) => {
+      {schoolSetup && <SchoolSetupModal onConfirm={async (grade, lang, country, fileData) => {
         const countryObj  = SCHOOL_COUNTRIES.find(c => c.id === country)
         const countryName = countryObj?.name || 'Deutschland'
         const curriculum  = countryObj?.curriculum || 'KMK'
         const langLabel   = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
-        const prompt = `Du bist ein erfahrener ${countryName}-Lehrer. Erstelle 15 altersgerechte Lernkarten für ${grade} in ${countryName} (${curriculum}-Lehrplan, ${new Date().getFullYear()}).
+        const isVorschuleGrade = grade === 'Vorschule'
+        const prompt = isVorschuleGrade
+          ? `You are a kindergarten teacher creating flashcards for children aged 4-6.
+Generate exactly 15 flashcards. Use ONLY these types — NO drawing, crafting, physical activities, writing, or motor skill tasks:
+
+Types allowed:
+- "buchstabe": letter recognition. front=single capital letter, emoji=object starting with that letter
+- "zahl": number recognition. front=digit as string ("3"), count=that number (3), emoji=small countable object
+- "zählen": counting task. front="Wie viele?", emoji=a single countable object emoji, count=2-5 (NEVER 1), back_de=German number word, back_en=English number word
+- "farbe": color naming. front=color name in German, colorHex=hex code, emoji=colored object in that color
+- "form": shape naming. front=shape name in German, shape=one of: kreis,dreieck,viereck,stern,herz
+- "bild": picture naming. front=German word for the object, emoji=matching emoji, back_de=German word, back_en=English word
+
+Include a mix of all 6 types (at least 2 of each). ALL fields must be filled.
+Return ONLY a valid JSON array, no markdown:
+[{"type":"buchstabe","front":"A","back":"Apfel","back_de":"Apfel","back_en":"Apple","emoji":"🍎","backShort":"A"},{"type":"zählen","front":"Wie viele?","back":"drei","back_de":"drei","back_en":"three","emoji":"🐥","count":3,"backShort":"3"},{"type":"farbe","front":"Rot","back":"rot","back_de":"rot","back_en":"red","colorHex":"#EF4444","emoji":"🍎","backShort":"red"},{"type":"form","front":"Kreis","back":"Kreis","back_de":"Kreis","back_en":"Circle","shape":"kreis","backShort":"○"},{"type":"zahl","front":"5","back":"fünf","back_de":"fünf","back_en":"five","emoji":"⭐","count":5,"backShort":"5"},{"type":"bild","front":"Hund","back":"Hund","back_de":"Hund","back_en":"Dog","emoji":"🐕","backShort":"Dog"}]`
+          : `Du bist ein erfahrener ${countryName}-Lehrer. Erstelle 15 altersgerechte Lernkarten für ${grade} in ${countryName} (${curriculum}-Lehrplan, ${new Date().getFullYear()}).
 Lernsprache: ${langLabel}. Karten sollen die wichtigsten Themen dieser Klassenstufe abdecken: Kernfächer, wichtige Begriffe, Konzepte.
 Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
 [{"front":"...","back":"...","backShort":"..."}]`
-        await createWithKI('Schule', 'purple', prompt, { schoolMode: true, schoolGrade: grade, schoolLang: lang, schoolCountry: country })
+        await createWithKI('Schule', 'purple', prompt, { schoolMode: true, schoolGrade: grade, schoolLang: lang, schoolCountry: country }, fileData)
         setSchoolSetup(false)
       }} onClose={() => setSchoolSetup(false)} />}
       {renaming    && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
