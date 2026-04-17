@@ -76,6 +76,19 @@ const LANG = {
 const LangContext = createContext(LANG.de)
 const useT = () => useContext(LangContext)
 
+// ─── ONLINE HOOK ──────────────────────────────────────────────────────────────
+const useOnline = () => {
+  const [online, setOnline] = useState(navigator.onLine)
+  useEffect(() => {
+    const on  = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+  return online
+}
+
 // ─── TIPS CONTEXT ─────────────────────────────────────────────────────────────
 const TipsContext = createContext({ dismissed: new Set(), dismiss: () => {} })
 const useTips = () => useContext(TipsContext)
@@ -142,10 +155,20 @@ const fmtDate = ts => {
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 const loadDocs = async (path) => {
+  const cacheKey = `katara_cache_${path.replace(/\//g, '_')}`
   try {
     const snap = await getDocs(query(collection(db, path), orderBy('createdAt', 'asc')))
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }))
-  } catch { return [] }
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    try { localStorage.setItem(cacheKey, JSON.stringify(docs)) } catch (_) {}
+    return docs
+  } catch {
+    // Offline fallback
+    try {
+      const cached = localStorage.getItem(cacheKey)
+      if (cached) return JSON.parse(cached)
+    } catch (_) {}
+    return []
+  }
 }
 // Recursively collect all cards under a Hauptkategorie (for export)
 const collectAllCards = async (uid, catId) => {
@@ -525,10 +548,10 @@ const Logo = ({ size = 26, subtitle = false }) => (
       fontSize: size,
       fontFamily: "'Exo 2', sans-serif",
       fontWeight: 800,
-      background: `linear-gradient(135deg, ${T.acc}, #7BB8FF)`,
+      background: 'linear-gradient(135deg, #F59E0B 0%, #FBBF24 40%, #F8D66A 60%, #F59E0B 100%)',
       WebkitBackgroundClip: 'text',
       WebkitTextFillColor: 'transparent',
-      letterSpacing: 1,
+      letterSpacing: 2,
     }}>
       Katara
     </div>
@@ -540,6 +563,19 @@ const Logo = ({ size = 26, subtitle = false }) => (
           BY BRIDGELAB
         </div>
     }
+  </div>
+)
+
+// ─── OFFLINE BADGE ────────────────────────────────────────────────────────────
+const OfflineBadge = () => (
+  <div style={{
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    fontSize: 11, fontWeight: 700, color: T.amber,
+    background: T.amberDim, border: `1px solid ${T.amber}44`,
+    borderRadius: 20, padding: '3px 10px', letterSpacing: 0.3,
+    flexShrink: 0,
+  }}>
+    📵 Offline
   </div>
 )
 
@@ -577,6 +613,7 @@ const Breadcrumb = ({ crumbs, onNavigate }) => (
 // ─── STICKY HEADER ────────────────────────────────────────────────────────────
 const Header = ({ crumbs, onBack, right, title, onNavigate, showSubtitle = false }) => {
   const t = useT()
+  const online = useOnline()
   return (
   <div style={{
     position: 'sticky', top: 0, zIndex: 50,
@@ -600,9 +637,11 @@ const Header = ({ crumbs, onBack, right, title, onNavigate, showSubtitle = false
         onMouseLeave={e => e.currentTarget.style.color = T.textDim}
       >← Bridgelab</a>
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-        <Logo size={19} subtitle={showSubtitle} />
+        <Logo size={24} subtitle={showSubtitle} />
       </div>
-      <div style={{ width: 72, flexShrink: 0 }} />
+      <div style={{ width: 72, flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
+        {!online && <OfflineBadge />}
+      </div>
     </div>
     {/* Row 2: Back · Breadcrumb/Title · Actions */}
     <div style={{
@@ -2554,8 +2593,12 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
   const [tipsLoading,   setTipsLoading]   = useState(false)
   const [micActive,     setMicActive]     = useState(false)
   const [micTranscript, setMicTranscript] = useState('')
+  const [patternTip,    setPatternTip]    = useState('')
+  const [showPatternTip, setShowPatternTip] = useState(false)
   const sessionStartRef    = useRef(null)
   const sessionAttemptsRef = useRef({})   // {cardId: timesProcessed} — caps re-inserts
+  const sessionFalschRef   = useRef(0)    // cumulative falsch count for pattern detection
+  const patternTriggeredRef = useRef(false)
   const micRef             = useRef(null)
 
   const countOptions = (() => {
@@ -2603,6 +2646,9 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     setKiError('')
     sessionStartRef.current = Date.now()
     sessionAttemptsRef.current = {}
+    sessionFalschRef.current = 0
+    patternTriggeredRef.current = false
+    setPatternTip(''); setShowPatternTip(false)
 
     if (learnMode === 'klassisch') {
       const shuffled = [...source].sort(() => Math.random() - 0.5).slice(0, count)
@@ -2740,6 +2786,27 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
 
     try { await updateDoc(doc(db, `${cardsPath}/${card.id}`), updates) } catch (_) {}
 
+    // Fehler-Muster: trigger KI analysis after 5th cumulative falsch
+    if (rating === 'falsch') {
+      sessionFalschRef.current += 1
+      if (sessionFalschRef.current === 5 && !patternTriggeredRef.current) {
+        patternTriggeredRef.current = true
+        const wrongSoFar = [...results.filter(r => r.rating === 'falsch'), { card, rating }]
+          .map(r => `- ${r.card.front}: ${r.card.back}`)
+          .join('\n')
+        fetch('/api/chat', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001', max_tokens: 150,
+            messages: [{ role: 'user', content: `Diese Lernkarten wurden falsch beantwortet:\n${wrongSoFar}\n\nAnalysiere das Muster: Was fällt dem Lernenden schwer? Gib einen konkreten Lerntipp auf Deutsch in maximal 2 Sätzen. Antworte NUR mit dem Tipp, ohne Einleitung.` }],
+          }),
+        }).then(r => r.json()).then(data => {
+          const tip = data.content?.[0]?.text?.trim()
+          if (tip) { setPatternTip(tip); setShowPatternTip(true) }
+        }).catch(() => {})
+      }
+    }
+
     const newResults = [...results, { card, rating }]
     setResults(newResults)
     setMicTranscript('')
@@ -2762,9 +2829,22 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
 
   const repeatWrong = (cards) => {
     sessionAttemptsRef.current = {}
+    sessionFalschRef.current = 0; patternTriggeredRef.current = false
     setQueue(cards); setSessionSize(cards.length)
     setFlipped(false); setResults([]); setMicTranscript('')
     setWrongTips({}); setTipsLoading(false)
+    setPatternTip(''); setShowPatternTip(false)
+    setPhase('session')
+  }
+
+  const repeatAll = () => {
+    sessionAttemptsRef.current = {}
+    sessionFalschRef.current = 0; patternTriggeredRef.current = false
+    const shuffled = [...initCards].sort(() => Math.random() - 0.5).slice(0, cardCount)
+    setQueue(shuffled); setSessionSize(shuffled.length)
+    setFlipped(false); setResults([]); setMicTranscript('')
+    setWrongTips({}); setTipsLoading(false)
+    setPatternTip(''); setShowPatternTip(false)
     setPhase('session')
   }
 
@@ -2859,6 +2939,17 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     const pct          = totalUniq > 0 ? Math.round(goodCount / totalUniq * 100) : 0
     const hardResults  = [...falschFinal, ...fastFinal]
     const masteredNow  = easyFinal.filter(r => (r.card.easyCount || 0) + 1 >= 5)
+    const lernzeit     = Math.round((Date.now() - (sessionStartRef.current || Date.now())) / 60000)
+
+    // Weakest card: most times rated 'falsch' across all results (not just last)
+    const falschCounts = {}
+    for (const r of results) { if (r.rating === 'falsch') falschCounts[r.card.id] = (falschCounts[r.card.id] || 0) + 1 }
+    const weakestId = Object.entries(falschCounts).sort((a, b) => b[1] - a[1])[0]?.[0]
+    const weakestCard = weakestId ? finalResults.find(r => r.card.id === weakestId)?.card : null
+
+    // Strongest card: rated easy or richtig with zero falsch
+    const falschIds = new Set(Object.keys(falschCounts))
+    const strongestCard = finalResults.find(r => !falschIds.has(r.card.id) && (r.rating === 'easy' || r.rating === 'richtig'))?.card || null
 
     return (
       <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, overflowY: 'auto' }}>
@@ -2930,7 +3021,39 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
             </div>
           )}
 
-          <Btn onClick={onClose} full style={{ padding: '14px', fontSize: 15 }}>Fertig</Btn>
+          {/* Session details: Lernzeit + weakest + strongest */}
+          <div style={{ background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r2, padding: '16px', marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.textDim, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 }}>Session-Details</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: weakestCard || strongestCard ? 12 : 0 }}>
+              <span style={{ fontSize: 16 }}>⏱</span>
+              <span style={{ fontSize: 14, color: T.textSub }}>Lernzeit: <span style={{ color: T.text, fontWeight: 600 }}>{lernzeit < 1 ? '< 1 min' : `${lernzeit} min`}</span></span>
+            </div>
+            {weakestCard && (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: strongestCard ? 10 : 0 }}>
+                <span style={{ fontSize: 16, flexShrink: 0 }}>🔴</span>
+                <div>
+                  <div style={{ fontSize: 12, color: T.textDim, marginBottom: 2 }}>Schwächste Karte</div>
+                  <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{weakestCard.front}</div>
+                  <div style={{ fontSize: 12, color: T.textSub }}>{weakestCard.back}</div>
+                </div>
+              </div>
+            )}
+            {strongestCard && (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <span style={{ fontSize: 16, flexShrink: 0 }}>🟢</span>
+                <div>
+                  <div style={{ fontSize: 12, color: T.textDim, marginBottom: 2 }}>Stärkste Karte</div>
+                  <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{strongestCard.front}</div>
+                  <div style={{ fontSize: 12, color: T.textSub }}>{strongestCard.back}</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Btn onClick={repeatAll} variant="secondary" style={{ padding: '14px', fontSize: 15, flex: 1 }}>🔄 Nochmal</Btn>
+            <Btn onClick={onClose} full style={{ padding: '14px', fontSize: 15, flex: 1 }}>Zurück</Btn>
+          </div>
         </div>
       </div>
     )
@@ -2961,6 +3084,25 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
           {queue.length} übrig
         </div>
       </div>
+
+      {/* Fehler-Muster notification */}
+      {showPatternTip && patternTip && (
+        <div
+          onClick={() => setShowPatternTip(false)}
+          style={{
+            background: 'rgba(79,142,247,0.12)', borderBottom: `1px solid ${T.acc}44`,
+            padding: '10px 20px', cursor: 'pointer', flexShrink: 0,
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+          }}
+        >
+          <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.acc, marginBottom: 2 }}>KI hat ein Muster erkannt</div>
+            <div style={{ fontSize: 13, color: T.textSub, lineHeight: 1.5 }}>{patternTip}</div>
+          </div>
+          <span style={{ fontSize: 12, color: T.textDim, marginLeft: 'auto', flexShrink: 0 }}>✕</span>
+        </div>
+      )}
 
       {/* Card area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -4728,8 +4870,9 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
   const { dismissed, dismiss }         = useTips()
   const { partnerUid, partnerName }   = usePartner()
   const partnerInfo = partnerUid ? { uid: partnerUid, name: partnerName } : null
-  const t    = useT()
-  const uid  = user.uid
+  const t      = useT()
+  const online = useOnline()
+  const uid    = user.uid
   const path = `users/${uid}/categories`
 
   const load = useCallback(async () => {
@@ -4886,9 +5029,10 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
             onMouseLeave={e => e.currentTarget.style.color = T.textDim}
           >← Bridgelab</a>
           <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-            <Logo size={21} subtitle />
+            <Logo size={26} subtitle />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            {!online && <OfflineBadge />}
             <span style={{ fontSize: 12, color: T.textDim }}>
               {user.displayName?.split(' ')[0]}
             </span>
