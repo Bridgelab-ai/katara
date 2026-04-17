@@ -22,9 +22,9 @@ const T = {
   accHov:   '#3B7BF0',
   accDim:   'rgba(79,142,247,0.18)',
   accGlow:  'rgba(79,142,247,0.32)',
-  text:     '#F0F4FF',
+  text:     '#FFFFFF',
   textSub:  '#D8E0F0',
-  textDim:  '#C0CCDD',
+  textDim:  '#B0C0D8',
   green:    '#34D399',
   greenDim: 'rgba(52,211,153,0.14)',
   red:      '#F87171',
@@ -416,7 +416,6 @@ const BridgelabBtn = () => {
         borderRadius: T.r, fontSize: 12, fontWeight: 600,
         padding: '5px 11px', cursor: 'pointer',
         transition: 'all 0.15s', letterSpacing: 0.3,
-        backdropFilter: 'blur(8px)',
       }}
     >
       ← Bridgelab
@@ -581,8 +580,7 @@ const Header = ({ crumbs, onBack, right, title, onNavigate, showSubtitle = false
   return (
   <div style={{
     position: 'sticky', top: 0, zIndex: 50,
-    background: `${T.bg}F2`,
-    backdropFilter: 'blur(14px)',
+    background: T.bg,
     borderBottom: `1px solid ${T.border}`,
   }}>
     {/* Row 1: Bridgelab · Logo · spacer */}
@@ -937,9 +935,8 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
-        background: hov ? T.s3 : T.s2,
-        border: `1px solid ${hov ? T.borderHov : T.border}`,
-        borderLeft: `3px solid ${color}`,
+        background: hov ? '#2E3D5E' : '#253352',
+        border: `2px solid ${hov ? color : T.acc}`,
         boxShadow: hov
           ? `0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px ${color}33`
           : `0 4px 16px rgba(0,0,0,0.3)`,
@@ -1144,7 +1141,7 @@ const CardItem = ({ card, onSave, onDelete, onMove, onSendToPartner }) => {
   if (editing) {
     return (
       <div style={{
-        background: 'rgba(23, 30, 48, 0.85)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+        background: '#1A2240',
         border: `1px solid ${T.acc}44`, borderLeft: `3px solid ${T.acc}`,
         borderRadius: T.r2, padding: '12px 14px', marginBottom: 8,
       }}>
@@ -2157,7 +2154,7 @@ const PublicShareModal = ({ cards, folderName, createdBy, onClose }) => {
     setCreating(false)
   }
 
-  const shareUrl = shareId ? `https://katara-bridgelab.vercel.app/share/${shareId}` : null
+  const shareUrl = shareId ? `https://katara-eta.vercel.app/share/${shareId}` : null
 
   const copy = () => {
     navigator.clipboard.writeText(shareUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
@@ -2951,7 +2948,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column' }}>
       {/* Top bar */}
       <div style={{
-        background: `${T.bg}EE`, backdropFilter: 'blur(12px)',
+        background: T.bg,
         borderBottom: `1px solid ${T.border}`,
         padding: '12px 20px',
         display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0,
@@ -2973,14 +2970,20 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
             <div className={`flip-inner${flipped ? ' flipped' : ''}`} style={{ minHeight: 260 }}>
               {/* FRONT */}
               <div className="flip-front" style={{
-                background: 'rgba(23, 30, 48, 0.8)',
-                backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-                border: `1px solid rgba(255,255,255,0.07)`,
+                background: card.mastered ? 'rgba(26, 20, 50, 0.92)' : 'rgba(23, 30, 48, 0.8)',
+                border: card.mastered ? '2px solid rgba(167,139,250,0.7)' : '1px solid rgba(255,255,255,0.07)',
                 borderRadius: T.r3, padding: '48px 40px 32px', minHeight: 260,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 textAlign: 'center',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)',
+                boxShadow: card.mastered
+                  ? '0 8px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(167,139,250,0.2), inset 0 1px 0 rgba(167,139,250,0.1)'
+                  : '0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)',
               }}>
+                {card.mastered && (
+                  <div style={{ position: 'absolute', top: 12, right: 14, fontSize: 11, fontWeight: 700, color: '#C4B5FD', letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    ⭐ Gemeistert
+                  </div>
+                )}
                 {card.image && <img src={card.image} alt="" style={{ maxHeight: 150, maxWidth: '100%', borderRadius: 10, marginBottom: 22, objectFit: 'contain' }} />}
                 <div style={{ fontSize: 22, fontWeight: 600, color: T.text, lineHeight: 1.45 }}>{card.front || '(Bild)'}</div>
                 {card.front && card.front.trim().length <= 3 && <PhoneticHint key={card.id} text={card.front.trim()} />}
@@ -3010,13 +3013,14 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
               </div>
               {/* BACK */}
               <div className="flip-back" style={{
-                background: 'rgba(20, 28, 50, 0.88)',
-                backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-                border: `1px solid ${T.acc}44`,
+                background: card.mastered ? 'rgba(26, 20, 50, 0.95)' : 'rgba(20, 28, 50, 0.88)',
+                border: card.mastered ? '2px solid rgba(167,139,250,0.7)' : `1px solid ${T.acc}44`,
                 borderRadius: T.r3, padding: '52px 40px', minHeight: 260,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 textAlign: 'center',
-                boxShadow: `0 0 0 1px ${T.acc}22, 0 16px 48px rgba(0,0,0,0.5), inset 0 1px 0 rgba(79,142,247,0.1)`,
+                boxShadow: card.mastered
+                  ? '0 0 0 1px rgba(167,139,250,0.2), 0 16px 48px rgba(0,0,0,0.5), inset 0 1px 0 rgba(167,139,250,0.15)'
+                  : `0 0 0 1px ${T.acc}22, 0 16px 48px rgba(0,0,0,0.5), inset 0 1px 0 rgba(79,142,247,0.1)`,
               }}>
                 {card.backImage && <img src={card.backImage} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 10, marginBottom: 20, objectFit: 'contain' }} />}
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.acc, letterSpacing: 1.6, marginBottom: 14 }}>ANTWORT</div>
@@ -4039,7 +4043,7 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: T.bg, display: 'flex', flexDirection: 'column' }}>
       {/* Top bar */}
-      <div style={{ background: `${T.bg}EE`, backdropFilter: 'blur(12px)', borderBottom: `1px solid ${T.border}`, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+      <div style={{ background: T.bg, borderBottom: `1px solid ${T.border}`, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
         <Btn onClick={onClose} variant="secondary" style={{ padding: '6px 12px', fontSize: 13, flexShrink: 0 }}>✕ Beenden</Btn>
         <div style={{ flex: 1, height: 6, background: T.s4, borderRadius: 3, overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${progress}%`, background: T.acc, borderRadius: 3, transition: 'width 0.3s' }} />
@@ -4054,7 +4058,6 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
           {/* ── Main card ─────────────────────────────────────────────────────── */}
           <div className="fade-in" style={{
             background: feedbackBg,
-            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
             border: `2px solid ${feedbackBorder}`,
             borderRadius: 24, padding: '48px 32px 40px',
             display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -4866,7 +4869,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
     <div className="app-bg" style={{ minHeight: '100vh', opacity: 1, filter: 'none' }}>
       {/* Top bar — two rows */}
       <div style={{
-        background: `${T.bg}F2`, backdropFilter: 'blur(14px)',
+        background: T.bg,
         borderBottom: `1px solid ${T.border}`,
         position: 'sticky', top: 0, zIndex: 50,
       }}>

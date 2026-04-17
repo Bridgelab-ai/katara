@@ -193,15 +193,9 @@ button:focus-visible {
 /* ── Glow pulse removed ───────────────────────────────────────────────────── */
 .glow-pulse { box-shadow: 0 0 12px rgba(79,142,247,0.3); }
 
-/* ── Mobile: boost blur & glow ────────────────────────────────────────────── */
+/* ── Mobile ───────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .glass-card {
     background: rgba(255, 255, 255, 0.09) !important;
-    backdrop-filter: blur(26px) !important;
-    -webkit-backdrop-filter: blur(26px) !important;
-  }
-  .header-glass {
-    backdrop-filter: blur(24px) saturate(1.6) !important;
-    -webkit-backdrop-filter: blur(24px) saturate(1.6) !important;
   }
 }
