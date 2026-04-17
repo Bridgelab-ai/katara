@@ -4838,7 +4838,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
     : items
 
   return (
-    <div className="app-bg" style={{ minHeight: '100vh', background: '#FFFFFF' }}>
+    <div className="app-bg" style={{ minHeight: '100vh', background: '#FFFFFF', opacity: 1, filter: 'none' }}>
       {/* Top bar — two rows */}
       <div style={{
         background: `${T.bg}F2`, backdropFilter: 'blur(14px)',
@@ -5710,6 +5710,7 @@ export default function App() {
   }
 
   return (
+    <div style={{ filter: 'none', opacity: 1 }}>
     <LangContext.Provider value={lang}>
       <TipsContext.Provider value={{ dismissed: dismissedTips, dismiss: dismissTip, resetAll }}>
         <PartnerContext.Provider value={{ partnerUid: partnerInfo?.uid || null, partnerName: partnerInfo?.name || null }}>
@@ -5725,5 +5726,6 @@ export default function App() {
         </PartnerContext.Provider>
       </TipsContext.Provider>
     </LangContext.Provider>
+    </div>
   )
 }
