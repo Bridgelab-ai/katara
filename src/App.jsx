@@ -11,10 +11,10 @@ import './App.css'
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 const T = {
   bg:       '#0E111A',
-  s1:       '#141824',   // surface base
-  s2:       '#1A2133',   // surface elevated
-  s3:       '#212843',   // surface hover / popup
-  s4:       '#2A3350',   // surface active
+  s1:       'rgba(255,255,255,0.05)',   // surface base
+  s2:       'rgba(255,255,255,0.08)',   // surface elevated
+  s3:       'rgba(255,255,255,0.12)',   // surface hover / popup
+  s4:       'rgba(255,255,255,0.17)',   // surface active
   border:   'rgba(255,255,255,0.12)',
   borderHov:'rgba(255,255,255,0.22)',
   acc:      '#4F8EF7',
@@ -22,8 +22,8 @@ const T = {
   accDim:   'rgba(79,142,247,0.18)',
   accGlow:  'rgba(79,142,247,0.32)',
   text:     '#F0F4FF',
-  textSub:  '#B0BEDB',
-  textDim:  '#7A8BAD',
+  textSub:  '#D8E0F0',
+  textDim:  '#C0CCDD',
   green:    '#34D399',
   greenDim: 'rgba(52,211,153,0.14)',
   red:      '#F87171',
@@ -1336,7 +1336,7 @@ const CardModal = ({ initial, onSave, onClose }) => {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {/* Front */}
-        <div style={{ background: T.bg, borderRadius: T.r, padding: 16, border: `1px solid ${T.border}` }}>
+        <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: T.r, padding: 16, border: `1px solid ${T.border}` }}>
           <SideLabel>VORDERSEITE</SideLabel>
           <FieldLabel>Text</FieldLabel>
           <textarea value={front} onChange={e => setFront(e.target.value)} placeholder="Begriff, Signal, Situation…" rows={3} style={{ marginBottom: 14 }} />
@@ -1346,7 +1346,7 @@ const CardModal = ({ initial, onSave, onClose }) => {
         </div>
 
         {/* Back */}
-        <div style={{ background: T.bg, borderRadius: T.r, padding: 16, border: `1px solid ${T.border}` }}>
+        <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: T.r, padding: 16, border: `1px solid ${T.border}` }}>
           <SideLabel>RÜCKSEITE</SideLabel>
           <FieldLabel>Langbezeichnung *</FieldLabel>
           <textarea value={back} onChange={e => setBack(e.target.value)} placeholder="z.B. Hauptsignal Hp 0 — Halt" rows={3} style={{ marginBottom: 10 }} />
@@ -3828,7 +3828,7 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
   const wordEn = card.back_en || card.front
 
   // Phase-based feedback colors
-  const feedbackBg    = phase === 'correct' ? '#0D2E1E' : phase === 'wrong' ? '#2E0D0D' : 'rgba(20,26,42,0.85)'
+  const feedbackBg    = phase === 'correct' ? '#0D2E1E' : phase === 'wrong' ? '#2E0D0D' : 'rgba(255,255,255,0.09)'
   const feedbackBorder = phase === 'correct' ? T.green    : phase === 'wrong' ? T.red    : 'rgba(255,255,255,0.07)'
 
   // The two TTS buttons shown on every card
