@@ -10,7 +10,7 @@ import './App.css'
 
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 const T = {
-  bg:       '#0E111A',
+  bg:       '#1A1F2E',
   s1:       'rgba(255,255,255,0.05)',   // surface base
   s2:       'rgba(255,255,255,0.08)',   // surface elevated
   s3:       'rgba(255,255,255,0.12)',   // surface hover / popup
@@ -936,8 +936,8 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
-        background: hov ? 'rgba(255,255,255,0.11)' : 'rgba(255,255,255,0.08)',
-        border: `1px solid ${hov ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.15)'}`,
+        background: hov ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.15)',
+        border: `1px solid ${hov ? 'rgba(255,255,255,0.40)' : 'rgba(255,255,255,0.30)'}`,
         borderLeft: `3px solid ${color}`,
         boxShadow: hov
           ? `0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px ${color}33`

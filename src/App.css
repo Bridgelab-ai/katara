@@ -1,6 +1,6 @@
 /* ── Force visibility overrides ──────────────────────────────────────────── */
 * { color: inherit; }
-body { background: #0E111A !important; color: #FFFFFF !important; }
+body { background: #1A1F2E !important; color: #FFFFFF !important; }
 .category-card, [class*="card"] { background: rgba(255,255,255,0.1) !important; border: 1px solid rgba(255,255,255,0.2) !important; }
 [class*="chip"], [class*="button"], button { background: rgba(79,142,247,0.3) !important; color: #FFFFFF !important; border: 1px solid rgba(79,142,247,0.5) !important; }
 input, textarea { background: rgba(255,255,255,0.1) !important; color: #FFFFFF !important; border: 1px solid rgba(255,255,255,0.2) !important; }
@@ -12,7 +12,7 @@ html { font-size: 16px; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  background: #0E111A;
+  background: #1A1F2E;
   color: #F0F4FF;
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
@@ -28,7 +28,7 @@ input, textarea, button { font-family: inherit; }
 
 .app-bg {
   min-height: 100vh;
-  background: #0E111A;
+  background: #1A1F2E;
   background-image: radial-gradient(circle, rgba(79,142,247,0.11) 1px, transparent 1px);
   background-size: 30px 30px;
   animation: dotPulse 8s ease-in-out infinite;
@@ -36,7 +36,7 @@ input, textarea, button { font-family: inherit; }
 
 /* ── Static dot grid (no animation) ─────────────────────────────────────── */
 .dot-bg {
-  background-color: #0A0E1A;
+  background-color: #1A1F2E;
   background-image: radial-gradient(circle, rgba(79,142,247,0.08) 1px, transparent 1px);
   background-size: 32px 32px;
 }
