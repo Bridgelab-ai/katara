@@ -22,9 +22,9 @@ const T = {
   accHov:   '#3B7BF0',
   accDim:   'rgba(79,142,247,0.18)',
   accGlow:  'rgba(79,142,247,0.32)',
-  text:     '#F0F4FF',
-  textSub:  '#D8E0F0',
-  textDim:  '#C0CCDD',
+  text:     '#000000',
+  textSub:  '#222222',
+  textDim:  '#444444',
   green:    '#34D399',
   greenDim: 'rgba(52,211,153,0.14)',
   red:      '#F87171',
@@ -937,7 +937,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
-        background: hov ? '#4A5070' : '#3A4060',
+        background: hov ? '#D8E4FF' : '#F0F4FF',
         border: `1px solid ${hov ? 'rgba(255,255,255,0.40)' : 'rgba(255,255,255,0.30)'}`,
         borderLeft: `3px solid ${color}`,
         boxShadow: hov
@@ -4838,7 +4838,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
     : items
 
   return (
-    <div className="app-bg" style={{ minHeight: '100vh', background: '#2A3045' }}>
+    <div className="app-bg" style={{ minHeight: '100vh', background: '#FFFFFF' }}>
       {/* Top bar — two rows */}
       <div style={{
         background: `${T.bg}F2`, backdropFilter: 'blur(14px)',
