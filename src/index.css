@@ -6,12 +6,11 @@
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color-scheme: dark;
 }
 
 body {
-  background: #1C1C1E;
-  color: #F5F5F7;
+  background: #1A2035;
+  color: #FFFFFF;
   min-height: 100vh;
 }
 
@@ -20,8 +19,8 @@ body {
 button, input, textarea, select { font-family: inherit; }
 
 input, textarea {
-  background: #2C2C2E;
-  border: 1px solid #48484A;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
   color: #F5F5F7;
   border-radius: 8px;
   padding: 10px 14px;
