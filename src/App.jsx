@@ -12,19 +12,19 @@ import './App.css'
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 const T = {
   bg:       '#1A1F2E',
-  s1:       'rgba(255,255,255,0.05)',   // surface base
-  s2:       'rgba(255,255,255,0.08)',   // surface elevated
-  s3:       'rgba(255,255,255,0.12)',   // surface hover / popup
-  s4:       'rgba(255,255,255,0.17)',   // surface active
-  border:   'rgba(255,255,255,0.12)',
-  borderHov:'rgba(255,255,255,0.22)',
+  s1:       'rgba(255,255,255,0.10)',   // surface base
+  s2:       'rgba(255,255,255,0.15)',   // surface elevated
+  s3:       'rgba(255,255,255,0.20)',   // surface hover / popup
+  s4:       'rgba(255,255,255,0.26)',   // surface active
+  border:   'rgba(255,255,255,0.18)',
+  borderHov:'rgba(255,255,255,0.30)',
   acc:      '#4F8EF7',
   accHov:   '#3B7BF0',
   accDim:   'rgba(79,142,247,0.18)',
   accGlow:  'rgba(79,142,247,0.32)',
-  text:     '#000000',
-  textSub:  '#222222',
-  textDim:  '#444444',
+  text:     '#F0F4FF',
+  textSub:  '#D8E0F0',
+  textDim:  '#C0CCDD',
   green:    '#34D399',
   greenDim: 'rgba(52,211,153,0.14)',
   red:      '#F87171',
@@ -937,8 +937,8 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
-        background: hov ? '#D8E4FF' : '#F0F4FF',
-        border: `1px solid ${hov ? 'rgba(255,255,255,0.40)' : 'rgba(255,255,255,0.30)'}`,
+        background: hov ? T.s3 : T.s2,
+        border: `1px solid ${hov ? T.borderHov : T.border}`,
         borderLeft: `3px solid ${color}`,
         boxShadow: hov
           ? `0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px ${color}33`
@@ -4838,7 +4838,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
     : items
 
   return (
-    <div className="app-bg" style={{ minHeight: '100vh', background: '#FFFFFF', opacity: 1, filter: 'none' }}>
+    <div className="app-bg" style={{ minHeight: '100vh', opacity: 1, filter: 'none' }}>
       {/* Top bar — two rows */}
       <div style={{
         background: `${T.bg}F2`, backdropFilter: 'blur(14px)',
