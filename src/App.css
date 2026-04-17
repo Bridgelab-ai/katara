@@ -1,3 +1,10 @@
+/* ── Force visibility overrides ──────────────────────────────────────────── */
+* { color: inherit; }
+body { background: #0E111A !important; color: #FFFFFF !important; }
+.category-card, [class*="card"] { background: rgba(255,255,255,0.1) !important; border: 1px solid rgba(255,255,255,0.2) !important; }
+[class*="chip"], [class*="button"], button { background: rgba(79,142,247,0.3) !important; color: #FFFFFF !important; border: 1px solid rgba(79,142,247,0.5) !important; }
+input, textarea { background: rgba(255,255,255,0.1) !important; color: #FFFFFF !important; border: 1px solid rgba(255,255,255,0.2) !important; }
+
 /* ── Katara — Global Reset & Base ────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
