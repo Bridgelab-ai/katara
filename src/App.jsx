@@ -10,26 +10,26 @@ import './App.css'
 
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 const T = {
-  bg:       '#0A0E1A',
-  s1:       '#111622',   // surface base
-  s2:       '#171E30',   // surface elevated
-  s3:       '#1E2840',   // surface hover / popup
-  s4:       '#263348',   // surface active
-  border:   '#263044',
-  borderHov:'#364360',
+  bg:       '#0E111A',
+  s1:       '#141824',   // surface base
+  s2:       '#1A2133',   // surface elevated
+  s3:       '#212843',   // surface hover / popup
+  s4:       '#2A3350',   // surface active
+  border:   'rgba(255,255,255,0.12)',
+  borderHov:'rgba(255,255,255,0.22)',
   acc:      '#4F8EF7',
   accHov:   '#3B7BF0',
-  accDim:   'rgba(79,142,247,0.13)',
-  accGlow:  'rgba(79,142,247,0.28)',
-  text:     '#ECF0F9',
-  textSub:  '#7E8FAE',
-  textDim:  '#4A5675',
+  accDim:   'rgba(79,142,247,0.18)',
+  accGlow:  'rgba(79,142,247,0.32)',
+  text:     '#F0F4FF',
+  textSub:  '#B0BEDB',
+  textDim:  '#7A8BAD',
   green:    '#34D399',
-  greenDim: 'rgba(52,211,153,0.12)',
+  greenDim: 'rgba(52,211,153,0.14)',
   red:      '#F87171',
-  redDim:   'rgba(248,113,113,0.12)',
-  amber:    '#F5A623',
-  amberDim: 'rgba(245,166,35,0.12)',
+  redDim:   'rgba(248,113,113,0.14)',
+  amber:    '#F59E0B',
+  amberDim: 'rgba(245,158,11,0.15)',
   r:        '8px',
   r2:       '12px',
   r3:       '16px',
@@ -936,11 +936,12 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
+        background: hov ? 'rgba(255,255,255,0.11)' : 'rgba(255,255,255,0.08)',
+        border: `1px solid ${hov ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.15)'}`,
         borderLeft: `3px solid ${color}`,
-        borderTop: `1px solid rgba(255,255,255,0.07)`,
         boxShadow: hov
-          ? `0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px ${color}33, inset 0 1px 0 rgba(255,255,255,0.06)`
-          : `0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)`,
+          ? `0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px ${color}33`
+          : `0 4px 16px rgba(0,0,0,0.3)`,
         transform: hov ? 'translateY(-2px)' : 'none',
       }}
     >
@@ -961,7 +962,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
           {item.name}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: T.textDim }}>
+          <span style={{ fontSize: 12, color: T.textSub }}>
             {groupCount} {groupCount === 1 ? 'Gruppe' : 'Gruppen'}
           </span>
           {cardCount > 0 && (
@@ -979,7 +980,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
             <div style={{ height: '100%', width: `${Math.round((masteredCount / cardCount) * 100)}%`, background: color, borderRadius: 2, transition: 'width 0.3s' }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 }}>
-            <span style={{ fontSize: 11, color: T.textDim }}>{masteredCount}/{cardCount} gemeistert</span>
+            <span style={{ fontSize: 11, color: T.textSub }}>{masteredCount}/{cardCount} gemeistert</span>
             {dueCount > 0 && (
               <span style={{
                 fontSize: 10, fontWeight: 700, color: T.amber,
@@ -995,7 +996,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
 
       {/* Last studied */}
       {(item._lastStudied || item.updatedAt) && (
-        <div style={{ fontSize: 11, color: T.textDim }}>
+        <div style={{ fontSize: 11, color: T.textSub }}>
           {item._lastStudied
             ? `${t.lastStudied}: ${fmtDate(item._lastStudied)}`
             : fmtDate(item.updatedAt)
@@ -4875,9 +4876,10 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
             <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{t.home}</span>
             {streak > 0 && (
               <span style={{
-                fontSize: 12, fontWeight: 700, color: T.amber,
-                background: `${T.amber}18`, borderRadius: 20,
-                padding: '3px 10px', letterSpacing: 0.2,
+                fontSize: 12, fontWeight: 700, color: '#fff',
+                background: T.amber, borderRadius: 20,
+                padding: '3px 11px', letterSpacing: 0.2,
+                boxShadow: `0 2px 8px ${T.amber}55`,
               }}>🔥 {streak} {streak === 1 ? 'Tag' : 'Tage'}</span>
             )}
           </div>
@@ -4910,7 +4912,12 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={t.searchPlaceholder}
-              style={{ paddingLeft: 34, width: '100%', maxWidth: 340 }}
+              style={{
+                paddingLeft: 34, width: '100%', maxWidth: 340,
+                background: 'rgba(255,255,255,0.07)',
+                border: '1px solid rgba(255,255,255,0.18)',
+                color: T.text,
+              }}
             />
           </div>
         )}
@@ -4918,14 +4925,14 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
         {/* Schnellstart — always visible */}
         {!loading && (
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 8 }}>Schnellstart</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textSub, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>Schnellstart</div>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
               {[
-                { icon: '💼', label: 'Beruf',   color: 'blue'   },
-                { icon: '🎓', label: 'Schule',  color: 'purple' },
-                { icon: '📖', label: 'Studium', color: 'green'  },
-                { icon: '🎯', label: 'Hobby',   color: 'amber'  },
-              ].map(({ icon, label, color }) => {
+                { icon: '💼', label: 'Beruf',   hex: '#4F8EF7', bg: 'rgba(79,142,247,0.22)'   },
+                { icon: '🎓', label: 'Schule',  hex: '#A78BFA', bg: 'rgba(167,139,250,0.22)'  },
+                { icon: '📖', label: 'Studium', hex: '#34D399', bg: 'rgba(52,211,153,0.22)'   },
+                { icon: '🎯', label: 'Hobby',   hex: '#F59E0B', bg: 'rgba(245,158,11,0.22)'   },
+              ].map(({ icon, label, hex, bg }) => {
                 const isLoading = quickLoading === label
                 return (
                   <button
@@ -4938,19 +4945,20 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
                       if (label === 'Hobby')   return setHobbySetup(true)
                     }}
                     style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      padding: '6px 14px', borderRadius: 20, flexShrink: 0,
-                      background: isLoading ? T.accDim : T.s2,
-                      border: `1px solid ${isLoading ? T.acc : T.border}`,
-                      color: isLoading ? T.acc : T.textSub,
-                      fontSize: 13, fontWeight: 600,
+                      display: 'inline-flex', alignItems: 'center', gap: 7,
+                      padding: '8px 16px', borderRadius: 20, flexShrink: 0,
+                      background: isLoading ? T.accDim : bg,
+                      border: `1px solid ${isLoading ? T.acc : hex}66`,
+                      color: isLoading ? T.acc : '#F0F4FF',
+                      fontSize: 13, fontWeight: 700,
                       cursor: quickLoading ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.12s', opacity: quickLoading && !isLoading ? 0.45 : 1,
+                      transition: 'all 0.15s', opacity: quickLoading && !isLoading ? 0.45 : 1,
+                      letterSpacing: 0.2,
                     }}
-                    onMouseEnter={e => { if (!quickLoading) { e.currentTarget.style.background = T.s3; e.currentTarget.style.color = T.text; e.currentTarget.style.borderColor = T.borderHov } }}
-                    onMouseLeave={e => { if (!quickLoading) { e.currentTarget.style.background = T.s2; e.currentTarget.style.color = T.textSub; e.currentTarget.style.borderColor = T.border } }}
+                    onMouseEnter={e => { if (!quickLoading) { e.currentTarget.style.background = `${hex}44`; e.currentTarget.style.borderColor = `${hex}99` } }}
+                    onMouseLeave={e => { if (!quickLoading) { e.currentTarget.style.background = bg; e.currentTarget.style.borderColor = `${hex}66` } }}
                   >
-                    {isLoading ? <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', fontSize: 12 }}>⟳</span> : <span>{icon}</span>}
+                    {isLoading ? <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', fontSize: 12 }}>⟳</span> : <span style={{ fontSize: 15 }}>{icon}</span>}
                     {isLoading ? 'KI generiert Karten…' : label}
                   </button>
                 )

@@ -5,8 +5,8 @@ html { font-size: 16px; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  background: #0A0E1A;
-  color: #ECF0F9;
+  background: #0E111A;
+  color: #F0F4FF;
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
 }
@@ -21,8 +21,8 @@ input, textarea, button { font-family: inherit; }
 
 .app-bg {
   min-height: 100vh;
-  background: #0A0E1A;
-  background-image: radial-gradient(circle, rgba(79,142,247,0.09) 1px, transparent 1px);
+  background: #0E111A;
+  background-image: radial-gradient(circle, rgba(79,142,247,0.11) 1px, transparent 1px);
   background-size: 30px 30px;
   animation: dotPulse 8s ease-in-out infinite;
 }
@@ -36,16 +36,17 @@ input, textarea, button { font-family: inherit; }
 
 /* ── Glassmorphism card ───────────────────────────────────────────────────── */
 .glass-card {
-  background: rgba(20, 26, 42, 0.72) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(79, 142, 247, 0.13) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
 }
 
 .glass-card:hover {
-  background: rgba(26, 33, 52, 0.82) !important;
+  background: rgba(255, 255, 255, 0.11) !important;
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
+  border-color: rgba(255, 255, 255, 0.22) !important;
 }
 
 /* ── Frosted glass header ─────────────────────────────────────────────────── */
@@ -118,10 +119,10 @@ input, textarea, button { font-family: inherit; }
 /* ── Input / Textarea ─────────────────────────────────────────────────────── */
 input[type="text"], input:not([type]), textarea {
   width: 100%;
-  background: rgba(10, 14, 26, 0.7);
-  border: 1px solid #2A3348;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
-  color: #ECF0F9;
+  color: #F0F4FF;
   padding: 9px 13px;
   font-size: 14px;
   outline: none;
@@ -136,7 +137,7 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(79,142,247,0.18);
 }
 
-input::placeholder, textarea::placeholder { color: #4A5675; }
+input::placeholder, textarea::placeholder { color: #7A8BAD; }
 
 /* ── Scrollbar ─────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -199,6 +200,7 @@ button:focus-visible {
 /* ── Mobile: boost blur & glow ────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .glass-card {
+    background: rgba(255, 255, 255, 0.09) !important;
     backdrop-filter: blur(26px) !important;
     -webkit-backdrop-filter: blur(26px) !important;
   }
