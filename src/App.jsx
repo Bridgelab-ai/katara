@@ -1,3 +1,4 @@
+// FORCE REBUILD 17.04.2026
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react'
 import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
 import {
