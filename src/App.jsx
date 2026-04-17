@@ -405,7 +405,7 @@ const BridgelabBtn = () => {
   const [hov, setHov] = useState(false)
   return (
     <button
-      onClick={() => { window.location.href = 'https://vocara-peach.vercel.app' }}
+      onClick={() => { window.open('https://katara-eta.vercel.app', '_blank') }}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{

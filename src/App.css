@@ -20,18 +20,12 @@ body {
 
 input, textarea, button { font-family: inherit; }
 
-/* ── Animated dot-grid background ────────────────────────────────────────── */
-@keyframes dotPulse {
-  0%, 100% { opacity: 0.055; }
-  50%       { opacity: 0.12;  }
-}
-
+/* ── Static dot-grid background (animation removed) ─────────────────────── */
 .app-bg {
   min-height: 100vh;
   background: #1A1F2E;
   background-image: radial-gradient(circle, rgba(79,142,247,0.11) 1px, transparent 1px);
   background-size: 30px 30px;
-  animation: dotPulse 8s ease-in-out infinite;
 }
 
 /* ── Static dot grid (no animation) ─────────────────────────────────────── */
@@ -196,13 +190,8 @@ button:focus-visible {
   to   { transform: rotate(360deg); }
 }
 
-/* ── Glow pulse for accent elements ──────────────────────────────────────── */
-@keyframes glowPulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(79,142,247,0.3); }
-  50%       { box-shadow: 0 0 24px rgba(79,142,247,0.55); }
-}
-
-.glow-pulse { animation: glowPulse 3s ease-in-out infinite; }
+/* ── Glow pulse removed ───────────────────────────────────────────────────── */
+.glow-pulse { box-shadow: 0 0 12px rgba(79,142,247,0.3); }
 
 /* ── Mobile: boost blur & glow ────────────────────────────────────────────── */
 @media (max-width: 640px) {
