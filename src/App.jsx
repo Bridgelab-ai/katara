@@ -1,4 +1,4 @@
-// FORCE REBUILD 17.04.2026
+// KATARA v2.0 - 17.04.2026 14:00
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react'
 import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth'
 import {
@@ -4839,6 +4839,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
 
   return (
     <div className="app-bg" style={{ minHeight: '100vh', opacity: 1, filter: 'none' }}>
+      <div style={{color:'red', fontSize:'24px', position:'fixed', top:0, zIndex:9999}}>v2.0</div>
       {/* Top bar — two rows */}
       <div style={{
         background: `${T.bg}F2`, backdropFilter: 'blur(14px)',
