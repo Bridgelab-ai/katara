@@ -3098,6 +3098,7 @@ const Empty = ({ icon, title, sub, children }) => (
 // fileData: null | { name, type:'text', text } | { name, type:'pdf', base64 }
 const SetupModal = ({ title, subtitle, onConfirm, onClose, children, canConfirm = true }) => {
   const [generating, setGenerating] = useState(false)
+  const [genErr,     setGenErr]     = useState('')
   const [fileData,   setFileData]   = useState(null)
   const [fileErr,    setFileErr]    = useState('')
   const fileRef = useRef(null)
@@ -3138,7 +3139,14 @@ const SetupModal = ({ title, subtitle, onConfirm, onClose, children, canConfirm 
 
   const handle = async () => {
     setGenerating(true)
-    try { await onConfirm(fileData) } finally { setGenerating(false) }
+    setGenErr('')
+    try {
+      await onConfirm(fileData)
+    } catch {
+      setGenErr('KI-Generierung fehlgeschlagen. Versuche es erneut.')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   return (
@@ -3190,6 +3198,11 @@ const SetupModal = ({ title, subtitle, onConfirm, onClose, children, canConfirm 
         }}>
           <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', fontSize: 16 }}>⟳</span>
           <span style={{ fontSize: 13, color: T.acc, fontWeight: 600 }}>KI generiert deine Karten…</span>
+        </div>
+      )}
+      {genErr && (
+        <div style={{ fontSize: 13, color: T.red, background: T.redDim, border: `1px solid ${T.red}44`, borderRadius: T.r, padding: '10px 14px', marginTop: 14 }}>
+          ⚠ {genErr}
         </div>
       )}
       <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
@@ -4283,6 +4296,12 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
     }
     setPartnerLoading(true); setPartnerMsg(null)
     try {
+      // Ensure own index entry exists (repairs users who signed up before indexing was added)
+      if (user.email) {
+        const ownKey = user.email.toLowerCase().replace(/\./g, ',')
+        setDoc(doc(db, 'userIndex', ownKey), { uid: user.uid, displayName: user.displayName || user.email }, { merge: true }).catch(() => {})
+      }
+
       // Primary: direct doc read via userIndex (no query, no cross-user rules issue)
       let partnerUid = null
       let partnerName = null
@@ -4292,16 +4311,18 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
         partnerUid  = idxSnap.data().uid
         partnerName = idxSnap.data().displayName || email
       } else {
-        // Fallback: query users collection (requires Firestore rules to allow reads)
-        const snap = await getDocs(query(collection(db, 'users'), where('email', '==', email)))
-        if (!snap.empty) {
-          partnerUid  = snap.docs[0].id
-          partnerName = snap.docs[0].data().displayName || email
-        }
+        // Fallback: query users collection
+        try {
+          const snap = await getDocs(query(collection(db, 'users'), where('email', '==', email)))
+          if (!snap.empty) {
+            partnerUid  = snap.docs[0].id
+            partnerName = snap.docs[0].data().displayName || email
+          }
+        } catch { /* rules may block cross-user query — that's fine, primary lookup failed */ }
       }
 
       if (!partnerUid) {
-        setPartnerMsg({ ok: false, text: 'Kein Nutzer mit dieser E-Mail gefunden. Ist er/sie in Katara registriert?' })
+        setPartnerMsg({ ok: false, text: 'Kein Nutzer gefunden. Bitte sicherstellen, dass er/sie sich mindestens einmal in Katara eingeloggt hat.' })
       } else {
         // Own profile
         await setDoc(doc(db, `users/${user.uid}/profile/main`), { partnerUid, partnerName }, { merge: true })
@@ -4782,7 +4803,11 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
         }
       }
       onOpen(newCat)
-    } catch (_) { load() }
+    } catch (err) {
+      console.error('[Katara] createWithKI failed:', err)
+      load()
+      throw err   // re-throw so SetupModal can show error state
+    }
   }
 
   const remove = async id => {
@@ -4839,7 +4864,6 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
 
   return (
     <div className="app-bg" style={{ minHeight: '100vh', opacity: 1, filter: 'none' }}>
-      <div style={{color:'red', fontSize:'24px', position:'fixed', top:0, zIndex:9999}}>v2.0</div>
       {/* Top bar — two rows */}
       <div style={{
         background: `${T.bg}F2`, backdropFilter: 'blur(14px)',
