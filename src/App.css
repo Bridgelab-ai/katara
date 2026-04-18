@@ -214,6 +214,13 @@ button:focus:not(:focus-visible) { outline: none; }
   animation: countUp 0.5s ease-out forwards;
 }
 
+/* ── Particle shimmer ─────────────────────────────────────────────────────── */
+@keyframes particleDrift {
+  0%   { opacity: 0;   transform: translateY(0)    scale(0);   }
+  20%  { opacity: 1;   transform: translateY(-5px) scale(1);   }
+  100% { opacity: 0;   transform: translateY(-22px) scale(0.2); }
+}
+
 /* ── Pulse ────────────────────────────────────────────────────────────────── */
 @keyframes pulse {
   0%, 100% { opacity: 1; }

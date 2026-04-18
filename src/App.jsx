@@ -639,8 +639,11 @@ const Modal = ({ children, onClose, width = 480 }) => {
           background: T.s2,
           border: `1px solid ${T.border}`,
           borderRadius: T.r3,
-          padding: 28,
+          padding: '28px 28px 40px',
           boxShadow: '0 24px 60px rgba(0,0,0,0.55)',
+          overflowY: 'auto',
+          maxHeight: 'calc(100dvh - 40px)',
+          WebkitOverflowScrolling: 'touch',
         }}
       >
         {children}
@@ -652,37 +655,27 @@ const Modal = ({ children, onClose, width = 480 }) => {
 // ─── LOGO ─────────────────────────────────────────────────────────────────────
 const Logo = ({ size = 26, subtitle = false }) => {
   const T = useTheme()
-  const iconSize = Math.round(size * 1.0)
   return (
   <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <svg width={iconSize} height={iconSize} viewBox="0 0 28 28" fill="none" style={{ flexShrink: 0 }}>
-        <polygon points="14,3 26,25 2,25" fill="url(#logoGrad)" opacity="0.95" />
-        <polygon points="14,9 21,25 7,25" fill="rgba(0,0,0,0.25)" />
-        <defs>
-          <linearGradient id="logoGrad" x1="14" y1="3" x2="14" y2="25" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#00F5C8" />
-            <stop offset="100%" stopColor="#00A882" />
-          </linearGradient>
-        </defs>
-      </svg>
-      <div style={{
-        fontSize: size,
-        fontFamily: "'Exo 2', sans-serif",
-        fontWeight: 800,
-        background: 'linear-gradient(135deg, #00F5C8 0%, #00D4AA 50%, #00A882 100%)',
-        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-        letterSpacing: '0.1em',
-        filter: 'drop-shadow(0 0 12px rgba(0,212,170,0.35))',
-      }}>
-        Katara
-      </div>
+    <div style={{
+      fontSize: size,
+      fontFamily: "'Exo 2', sans-serif",
+      fontWeight: 800,
+      background: 'linear-gradient(135deg, #00F5C8 0%, #00D4AA 50%, #00A882 100%)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+      backgroundClip: 'text',
+      letterSpacing: '0.08em',
+      WebkitTextStroke: '0.6px rgba(184,134,11,0.55)',
+      filter: 'drop-shadow(0 0 14px rgba(0,212,170,0.4))',
+    }}>
+      Katara
     </div>
     {subtitle
-      ? <div style={{ fontSize: Math.max(8, size * 0.38), color: T.textSub, letterSpacing: 0.2, marginTop: 3, fontWeight: 500, paddingLeft: iconSize + 8 }}>
+      ? <div style={{ fontSize: Math.max(8, size * 0.38), color: T.textSub, letterSpacing: 0.2, marginTop: 3, fontWeight: 500 }}>
           Strukturiertes Lernen.
         </div>
-      : <div style={{ fontSize: Math.max(8, size * 0.31), color: T.textDim, letterSpacing: 1.8, marginTop: 3, paddingLeft: iconSize + 8 }}>
+      : <div style={{ fontSize: Math.max(8, size * 0.31), color: '#B8860B', letterSpacing: 1.8, marginTop: 3, fontWeight: 600, opacity: 0.85 }}>
           BY BRIDGELAB
         </div>
     }
@@ -1095,7 +1088,27 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
   const [hov, setHov] = useState(false)
   const cardRef = useRef(null)
   const [tilt, setTilt] = useState({ rx: 2, ry: 0, lx: 50, ly: 30 })
+  const [particles, setParticles] = useState([])
+  const particleTimer = useRef(null)
   const t = useT()
+
+  useEffect(() => {
+    if (hov) {
+      const ps = Array.from({ length: 4 }, (_, i) => ({
+        id: i,
+        x: 10 + Math.random() * 80,
+        y: 15 + Math.random() * 65,
+        size: 2 + Math.random() * 2,
+        delay: i * 80,
+      }))
+      setParticles(ps)
+      particleTimer.current = setTimeout(() => setParticles([]), 750)
+    } else {
+      clearTimeout(particleTimer.current)
+      setParticles([])
+    }
+    return () => clearTimeout(particleTimer.current)
+  }, [hov])
   const groupCount    = item._count ?? 0
   const cardCount     = item._cardCount ?? 0
   const masteredCount = item._masteredCount ?? 0
@@ -1125,14 +1138,18 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
-        background: hov ? '#1C2230' : '#161B22',
-        border: '1px solid rgba(255,255,255,0.08)',
+        background: hov
+          ? `linear-gradient(145deg, #222A3E, #1A2030)`
+          : `linear-gradient(145deg, #1E2535, #161B22)`,
+        borderTop: hov ? '1px solid rgba(255,255,255,0.18)' : '1px solid rgba(255,255,255,0.12)',
+        borderRight: '1px solid rgba(255,255,255,0.05)',
+        borderBottom: '1px solid rgba(255,255,255,0.04)',
         borderLeft: `3px solid ${color}`,
         boxShadow: hov
-          ? `0 1px 0 rgba(255,255,255,0.06) inset, 0 -1px 0 rgba(0,0,0,0.4) inset, 0 8px 20px rgba(0,0,0,0.5), 0 20px 40px rgba(0,0,0,0.35), -4px 0 16px ${color}55`
-          : `0 1px 0 rgba(255,255,255,0.04) inset, 0 -1px 0 rgba(0,0,0,0.3) inset, 0 4px 12px rgba(0,0,0,0.4), -3px 0 10px ${color}33`,
+          ? `0 1px 0 rgba(255,255,255,0.1) inset, 0 2px 4px rgba(0,0,0,0.6), 0 12px 24px rgba(0,0,0,0.5), 0 28px 48px rgba(0,0,0,0.4), -6px 0 20px ${color}88`
+          : `0 1px 0 rgba(255,255,255,0.08) inset, 0 2px 4px rgba(0,0,0,0.5), 0 8px 16px rgba(0,0,0,0.4), 0 20px 40px rgba(0,0,0,0.3), -4px 0 12px ${color}55`,
         transform: hov
-          ? `perspective(600px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) translateY(-4px)`
+          ? `perspective(600px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) translateY(-6px)`
           : `perspective(600px) rotateX(2deg) rotateY(0deg)`,
         willChange: 'transform',
       }}
@@ -1147,24 +1164,37 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
       <div style={{ position: 'absolute', inset: 0, borderRadius: T.r2, pointerEvents: 'none', overflow: 'hidden' }}>
         <div className="card-sweep" style={{ animationDelay: `${((item.id?.charCodeAt(0) || 0) % 5) + 1}s` }} />
       </div>
+      {/* Sparkle particles */}
+      {particles.map(p => (
+        <div key={p.id} style={{
+          position: 'absolute', left: `${p.x}%`, top: `${p.y}%`,
+          width: p.size, height: p.size, borderRadius: '50%',
+          background: '#00D4AA',
+          boxShadow: '0 0 6px rgba(0,212,170,0.9)',
+          pointerEvents: 'none',
+          animation: `particleDrift 600ms ${p.delay}ms ease-out forwards`,
+          zIndex: 10,
+        }} />
+      ))}
       {/* Icon */}
       <div style={{
-        width: 38, height: 38, borderRadius: 9,
-        background: colorDim,
+        width: 44, height: 44, borderRadius: 10,
+        background: `${color}18`,
+        border: `1px solid ${color}30`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0,
       }}>
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <path d="M1.5 4.5C1.5 3.672 2.172 3 3 3H7L8.5 4.5H15C15.828 4.5 16.5 5.172 16.5 6V13.5C16.5 14.328 15.828 15 15 15H3C2.172 15 1.5 14.328 1.5 13.5V4.5Z" stroke={color} strokeWidth="1.4" strokeLinejoin="round"/>
+        <svg width="24" height="24" viewBox="0 0 18 18" fill="none">
+          <path d="M1.5 4.5C1.5 3.672 2.172 3 3 3H7L8.5 4.5H15C15.828 4.5 16.5 5.172 16.5 6V13.5C16.5 14.328 15.828 15 15 15H3C2.172 15 1.5 14.328 1.5 13.5V4.5Z" stroke={color} strokeWidth="1.5" strokeLinejoin="round" fill={`${color}10`}/>
         </svg>
       </div>
 
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 17, fontWeight: 700, color: T.text, lineHeight: 1.3, marginBottom: 6 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF', lineHeight: 1.3, marginBottom: 6 }}>
           {item.name}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: '#00D4AA99' }}>
+          <span style={{ fontSize: 13, color: '#00D4AA' }}>
             {groupCount} {groupCount === 1 ? 'Gruppe' : 'Gruppen'}
           </span>
           {cardCount > 0 && (
@@ -1216,10 +1246,10 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
 
       {/* Colored category circle */}
       <div style={{
-        position: 'absolute', top: 12, right: 44,
-        width: 10, height: 10, borderRadius: '50%',
-        background: color, opacity: 0.85,
-        boxShadow: `0 0 8px ${color}88`,
+        position: 'absolute', top: 14, right: 46,
+        width: 14, height: 14, borderRadius: '50%',
+        background: color,
+        boxShadow: `0 0 8px ${color}CC, 0 0 16px ${color}66`,
       }} />
 
       {/* Context menu — always visible */}
