@@ -1,5 +1,7 @@
 export const config = { api: { bodyParser: { sizeLimit: '20mb' } } }
 
+const KI_SYSTEM = "Create detailed, unique flashcards based on the user's specific context. Never include religious content or practical physical exercises. Focus only on theoretical and factual knowledge. Every card must be specific and meaningful — never generic or mass-produced."
+
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
 const HEADERS = (key) => ({
   'Content-Type': 'application/json',
@@ -90,7 +92,7 @@ Return ONLY a valid JSON array. No markdown. No explanation. No backticks. Start
       model: model || 'claude-haiku-4-5-20251001',
       max_tokens: max_tokens || 4000,
       messages: messages || [],
-      ...(system ? { system } : {}),
+      system: system || KI_SYSTEM,
     }
     const { status, data } = await callClaude(key, body)
     return res.status(status).json(data)

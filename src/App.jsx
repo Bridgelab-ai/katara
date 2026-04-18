@@ -387,6 +387,17 @@ const sendItemToPartner = async (partnerUid, fromUid, fromName, name, cards) => 
   })
 }
 
+// ─── RESPONSIVE HOOK ─────────────────────────────────────────────────────────
+const useWide = () => {
+  const [wide, setWide] = useState(() => window.innerWidth >= 768)
+  useEffect(() => {
+    const h = () => setWide(window.innerWidth >= 768)
+    window.addEventListener('resize', h)
+    return () => window.removeEventListener('resize', h)
+  }, [])
+  return wide
+}
+
 // ─── CATEGORY COLORS ─────────────────────────────────────────────────────────
 const CAT_COLORS = [
   { id: 'blue',   hex: '#4F8EF7' },
@@ -2743,6 +2754,10 @@ const ShareModal = ({ catName, partnerName, onConfirm, onClose, sharing }) => (
 
 // ─── LEARN MODE ───────────────────────────────────────────────────────────────
 const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
+  const { cardSize } = useSettings()
+  const learnFrontSize = cardSize === 'small' ? 18 : cardSize === 'large' ? 28 : 22
+  const learnBackSize  = cardSize === 'small' ? 20 : cardSize === 'large' ? 30 : 24
+  const learnShortSize = cardSize === 'small' ? 13 : cardSize === 'large' ? 19 : 16
   const [phase,         setPhase]         = useState('settings') // settings|loading|session|result
   const [cardCount,     setCardCount]     = useState(() => Math.min(10, initCards.length))
   const [learnMode,     setLearnMode]     = useState('klassisch')
@@ -3289,7 +3304,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
                   </div>
                 )}
                 {card.image && <img src={card.image} alt="" style={{ maxHeight: 150, maxWidth: '100%', borderRadius: 10, marginBottom: 22, objectFit: 'contain' }} />}
-                <div style={{ fontSize: 22, fontWeight: 600, color: T.text, lineHeight: 1.45 }}>{card.front || '(Bild)'}</div>
+                <div style={{ fontSize: learnFrontSize, fontWeight: 600, color: T.text, lineHeight: 1.45 }}>{card.front || '(Bild)'}</div>
                 {card.front && card.front.trim().length <= 3 && <PhoneticHint key={card.id} text={card.front.trim()} />}
                 <div style={{ fontSize: 12, color: T.textDim, marginTop: 20, letterSpacing: 0.5 }}>Klicken zum Aufdecken</div>
                 {/* Mic button */}
@@ -3328,8 +3343,8 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
               }}>
                 {card.backImage && <img src={card.backImage} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 10, marginBottom: 20, objectFit: 'contain' }} />}
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.acc, letterSpacing: 1.6, marginBottom: 14 }}>ANTWORT</div>
-                <div style={{ fontSize: 24, fontWeight: 700, color: T.text, lineHeight: 1.4, marginBottom: 10 }}>{card.back}</div>
-                {card.backShort && <div style={{ fontSize: 16, color: T.amber, fontWeight: 600, marginBottom: 10 }}>{card.backShort}</div>}
+                <div style={{ fontSize: learnBackSize, fontWeight: 700, color: T.text, lineHeight: 1.4, marginBottom: 10 }}>{card.back}</div>
+                {card.backShort && <div style={{ fontSize: learnShortSize, color: T.amber, fontWeight: 600, marginBottom: 10 }}>{card.backShort}</div>}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 6, flexWrap: 'wrap' }}>
                   <TtsBtn text={card.pronunciation_de || card.back} lang="de-DE" label="🇩🇪 DE" />
                   {(card.pronunciation_en || card.back) && (
@@ -5043,6 +5058,7 @@ const ProgressDashboard = ({ streak, totalCards, weeklyMinutes, items, loading }
 
 // ─── HOME SCREEN (Level 1: Hauptkategorien) ───────────────────────────────────
 const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, weeklyMinutes = 0 }) => {
+  const wide = useWide()
   const [items,       setItems]       = useState([])
   const [loading,     setLoading]     = useState(true)
   const [modal,       setModal]       = useState(false)
@@ -5213,7 +5229,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
         {/* Row 1: Bridgelab · Logo · user */}
         <div style={{
           display: 'flex', alignItems: 'center',
-          padding: '7px 28px',
+          padding: `7px ${wide ? 40 : 28}px`,
           borderBottom: `1px solid ${T.border}44`,
         }}>
           <a
@@ -5237,7 +5253,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
         {/* Row 2: Title + streak + New Category */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '9px 28px',
+          padding: `9px ${wide ? 40 : 28}px`,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{t.home}</span>
@@ -5256,7 +5272,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
         </div>
       </div>
 
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
+      <div style={{ maxWidth: wide ? 1400 : 900, margin: '0 auto', padding: wide ? '28px 40px' : '28px 24px' }}>
         {/* Progress Dashboard */}
         <ProgressDashboard
           streak={streak}
@@ -5339,7 +5355,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
         ) : !loading && filtered.length === 0 ? (
           <Empty icon="🔍" title="Keine Treffer" sub={`Keine Kategorie enthält "${search}".`} />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: wide ? 'repeat(auto-fill, minmax(280px, 1fr))' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: wide ? 18 : 14 }}>
             {filtered.map(item => (
               <FolderCard
                 key={item.id} item={item}
