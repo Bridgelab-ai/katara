@@ -36,6 +36,37 @@ const T = {
   r3:       '16px',
 }
 
+// ─── LIGHT MODE TOKENS ────────────────────────────────────────────────────────
+const T_LIGHT = {
+  bg: '#F0F4FF',
+  s1: 'rgba(0,0,0,0.04)',
+  s2: '#FFFFFF',
+  s3: 'rgba(0,0,0,0.08)',
+  s4: 'rgba(0,0,0,0.13)',
+  border: 'rgba(0,0,0,0.13)',
+  borderHov: 'rgba(0,0,0,0.24)',
+  acc: '#2563EB',
+  accHov: '#1D4ED8',
+  accDim: 'rgba(37,99,235,0.10)',
+  accGlow: 'rgba(37,99,235,0.20)',
+  text: '#1A1A2E',
+  textSub: '#374151',
+  textDim: '#6B7280',
+  green: '#059669',
+  greenDim: 'rgba(5,150,105,0.10)',
+  red: '#DC2626',
+  redDim: 'rgba(220,38,38,0.09)',
+  amber: '#D97706',
+  amberDim: 'rgba(217,119,6,0.10)',
+  r: '8px', r2: '12px', r3: '16px',
+}
+
+// ─── THEME CONTEXT ────────────────────────────────────────────────────────────
+const ThemeContext  = createContext(T)
+const useTheme      = () => useContext(ThemeContext)
+const SettingsCtx   = createContext({ cardSize: 'normal' })
+const useSettings   = () => useContext(SettingsCtx)
+
 // ─── LANGUAGE STRINGS ─────────────────────────────────────────────────────────
 const LANG = {
   de: {
@@ -360,6 +391,7 @@ const catColor = id => CAT_COLORS.find(c => c.id === id)?.hex ?? CAT_COLORS[0].h
 
 // ─── PRIMITIVES ───────────────────────────────────────────────────────────────
 const Btn = ({ children, onClick, variant = 'primary', disabled = false, style = {}, full = false }) => {
+  const T = useTheme()
   const [hov,     setHov]     = useState(false)
   const [pressed, setPressed] = useState(false)
 
@@ -425,6 +457,7 @@ const Btn = ({ children, onClick, variant = 'primary', disabled = false, style =
 
 // ─── BRIDGELAB NAV BUTTON ─────────────────────────────────────────────────────
 const BridgelabBtn = () => {
+  const T = useTheme()
   const [hov, setHov] = useState(false)
   return (
     <button
@@ -467,6 +500,7 @@ const detectLang = text => {
 }
 
 const TtsBtn = ({ text, lang, label }) => {
+  const T = useTheme()
   const [active, setActive] = useState(false)
   const resolvedLang = lang || detectLang(text)
   const play = e => {
@@ -507,6 +541,7 @@ const TtsBtn = ({ text, lang, label }) => {
 
 // ─── MODAL ────────────────────────────────────────────────────────────────────
 const Modal = ({ children, onClose, width = 480 }) => {
+  const T = useTheme()
   // Guard against mobile ghost-clicks: ignore backdrop taps within 300ms of mount
   const mountedAt = useRef(Date.now())
   return (
@@ -542,7 +577,9 @@ const Modal = ({ children, onClose, width = 480 }) => {
 }
 
 // ─── LOGO ─────────────────────────────────────────────────────────────────────
-const Logo = ({ size = 26, subtitle = false }) => (
+const Logo = ({ size = 26, subtitle = false }) => {
+  const T = useTheme()
+  return (
   <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
     <div style={{
       fontSize: size,
@@ -564,10 +601,13 @@ const Logo = ({ size = 26, subtitle = false }) => (
         </div>
     }
   </div>
-)
+  )
+}
 
 // ─── OFFLINE BADGE ────────────────────────────────────────────────────────────
-const OfflineBadge = () => (
+const OfflineBadge = () => {
+  const T = useTheme()
+  return (
   <div style={{
     display: 'inline-flex', alignItems: 'center', gap: 5,
     fontSize: 11, fontWeight: 700, color: T.amber,
@@ -577,10 +617,13 @@ const OfflineBadge = () => (
   }}>
     📵 Offline
   </div>
-)
+  )
+}
 
 // ─── BREADCRUMB ───────────────────────────────────────────────────────────────
-const Breadcrumb = ({ crumbs, onNavigate }) => (
+const Breadcrumb = ({ crumbs, onNavigate }) => {
+  const T = useTheme()
+  return (
   <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', overflow: 'hidden' }}>
     {crumbs.map((c, i) => (
       <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -608,10 +651,12 @@ const Breadcrumb = ({ crumbs, onNavigate }) => (
       </span>
     ))}
   </div>
-)
+  )
+}
 
 // ─── STICKY HEADER ────────────────────────────────────────────────────────────
 const Header = ({ crumbs, onBack, right, title, onNavigate, showSubtitle = false }) => {
+  const T = useTheme()
   const t = useT()
   const online = useOnline()
   return (
@@ -681,6 +726,7 @@ const Header = ({ crumbs, onBack, right, title, onNavigate, showSubtitle = false
 
 // ─── CONTEXT MENU ─────────────────────────────────────────────────────────────
 const CtxMenu = ({ items }) => {
+  const T = useTheme()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -743,6 +789,7 @@ const CtxMenu = ({ items }) => {
 
 // ─── CREATE / RENAME MODALS ───────────────────────────────────────────────────
 const CreateModal = ({ title, placeholder, onSave, onClose, withColor = false }) => {
+  const T = useTheme()
   const [name,  setName]  = useState('')
   const [color, setColor] = useState('blue')
   const t = useT()
@@ -789,6 +836,7 @@ const CreateModal = ({ title, placeholder, onSave, onClose, withColor = false })
 }
 
 const RenameModal = ({ current, onSave, onClose }) => {
+  const T = useTheme()
   const [val, setVal] = useState(current)
   const t = useT()
   const submit = () => { if (val.trim()) { onSave(val.trim()); onClose() } }
@@ -814,6 +862,7 @@ const RenameModal = ({ current, onSave, onClose }) => {
 // ─── CONFIRM SEND MODAL ───────────────────────────────────────────────────────
 // Self-contained: fetches partner live on open, handles all states internally
 const SendToPartnerModal = ({ uid, displayName, name, getCards, onClose }) => {
+  const T = useTheme()
   const [step,    setStep]    = useState('loading') // loading|no-partner|confirm|sending|done
   const [partner, setPartner] = useState(null)
 
@@ -885,6 +934,7 @@ const SendToPartnerModal = ({ uid, displayName, name, getCards, onClose }) => {
 
 // ─── INCOMING SHARE MODAL ─────────────────────────────────────────────────────
 const IncomingShareModal = ({ item, onAccept, onDecline }) => {
+  const T = useTheme()
   const [loading, setLoading] = useState(false)
   const handle = async accept => {
     setLoading(true)
@@ -931,6 +981,7 @@ const IncomingShareModal = ({ item, onAccept, onDecline }) => {
 
 // ─── MASTERY BAR ──────────────────────────────────────────────────────────────
 const MasteryBar = ({ value, height = 4, style = {} }) => {
+  const T = useTheme()
   const color = value >= 80 ? T.green : value >= 40 ? T.acc : T.textDim
   return (
     <div style={{ height, background: T.s4, borderRadius: height, overflow: 'hidden', ...style }}>
@@ -943,14 +994,18 @@ const MasteryBar = ({ value, height = 4, style = {} }) => {
 }
 
 // ─── SECTION LABEL ────────────────────────────────────────────────────────────
-const SectionLabel = ({ children }) => (
+const SectionLabel = ({ children }) => {
+  const T = useTheme()
+  return (
   <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>
     {children}
   </div>
-)
+  )
+}
 
 // ─── FOLDER CARD (grid tile — Level 1) ───────────────────────────────────────
 const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExport, onSendToPartner, onPublicShare }) => {
+  const T = useTheme()
   const [hov, setHov] = useState(false)
   const t = useT()
   const groupCount    = item._count ?? 0
@@ -1070,6 +1125,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
 
 // ─── FOLDER ROW (list — Levels 2 & 3) ────────────────────────────────────────
 const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor, onLearn, onMove, onExport, onSendToPartner }) => {
+  const T = useTheme()
   const [hov, setHov] = useState(false)
   const t = useT()
   const color = accentColor || T.acc
@@ -1145,6 +1201,7 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
 
 // ─── CARD LIST ITEM ───────────────────────────────────────────────────────────
 const CardItem = ({ card, onSave, onDelete, onMove, onSendToPartner }) => {
+  const T = useTheme()
   const [hov,         setHov]         = useState(false)
   const [editing,     setEditing]     = useState(false)
   const [front,       setFront]       = useState(card.front || '')
@@ -1307,7 +1364,9 @@ const CardItem = ({ card, onSave, onDelete, onMove, onSendToPartner }) => {
 }
 
 // ─── IMG PREVIEW ──────────────────────────────────────────────────────────────
-const ImgPreview = ({ src, onRemove }) => (
+const ImgPreview = ({ src, onRemove }) => {
+  const T = useTheme()
+  return (
   <div style={{ marginTop: 10, position: 'relative', display: 'inline-block' }}>
     <img src={src} alt="" style={{
       maxWidth: '100%', maxHeight: 80, borderRadius: 7,
@@ -1325,10 +1384,12 @@ const ImgPreview = ({ src, onRemove }) => (
       }}
     >✕</button>
   </div>
-)
+  )
+}
 
 // ─── CARD MODAL ───────────────────────────────────────────────────────────────
 const CardModal = ({ initial, onSave, onClose }) => {
+  const T = useTheme()
   const [front,           setFront]           = useState(initial?.front           || '')
   const [image,           setImage]           = useState(initial?.image           || null)
   const [back,            setBack]            = useState(initial?.back            || '')
@@ -1426,6 +1487,7 @@ const LEHRPLAN_COUNTRIES = [
 ]
 
 const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCreateSub }) => {
+  const T = useTheme()
   const destList = destinations.length > 0 ? destinations : [{ label: 'Hier', path: cardsPath }]
 
   const [files,       setFiles]       = useState([])
@@ -1443,7 +1505,10 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
   const [lehrplanSel,     setLehrplanSel]     = useState(null)
   const [lehrplanCustom,  setLehrplanCustom]  = useState('')
   const [lehrplanCountry, setLehrplanCountry] = useState('Deutschland')
-  const fileRef = useRef(null)
+  const [ankiOpen,    setAnkiOpen]    = useState(false)
+  const [ankiText,    setAnkiText]    = useState('')
+  const fileRef    = useRef(null)
+  const ankiFileRef = useRef(null)
 
   const addFiles = newFiles => {
     setFiles(prev => {
@@ -1457,6 +1522,35 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
     if (ext === 'pdf') return '📄'
     if (['jpg','jpeg','png','gif','webp'].includes(ext)) return '🖼️'
     return '📝'
+  }
+
+  const importAnki = async (source) => {
+    // source: a File or a raw string
+    let text = typeof source === 'string' ? source : await toText(source)
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'))
+    const cards = []
+    for (const line of lines) {
+      const tabIdx = line.indexOf('\t')
+      if (tabIdx < 1) continue
+      const front = line.slice(0, tabIdx).trim()
+      const rest  = line.slice(tabIdx + 1).trim()
+      // Anki may have a second tab for tags; split at second tab if present
+      const secondTab = rest.indexOf('\t')
+      const back = secondTab >= 0 ? rest.slice(0, secondTab).trim() : rest
+      if (front) cards.push({ front, back, backShort: '', _dest: destList[0].path })
+    }
+    if (cards.length === 0) { setError('Keine Karten gefunden. Format: Vorderseite[Tab]Rückseite — eine Karte pro Zeile.'); return }
+    setPreview(cards)
+    setAnkiOpen(false)
+    setAnkiText('')
+    setSubDismissed(false)
+  }
+
+  const handleAnkiFile = async e => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    await importAnki(file)
+    e.target.value = ''
   }
 
   const parseCards = (raw) => {
@@ -1842,6 +1936,62 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* ── Anki Import ── */}
+            <div style={{ marginTop: 16, position: 'relative' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                <div style={{ flex: 1, height: 1, background: T.border }} />
+                <span style={{ fontSize: 11, color: T.textDim, whiteSpace: 'nowrap' }}>oder</span>
+                <div style={{ flex: 1, height: 1, background: T.border }} />
+              </div>
+              <button
+                onClick={() => setAnkiOpen(o => !o)}
+                disabled={loading}
+                style={{
+                  width: '100%', padding: '12px 18px', borderRadius: T.r2,
+                  background: T.s2, border: `1px solid ${ankiOpen ? T.acc + '66' : T.border}`,
+                  color: T.text, fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  transition: 'border-color 0.15s',
+                }}
+              >
+                <span>📥 Anki-Import (.txt)</span>
+                <span style={{ color: T.textDim, fontSize: 12 }}>{ankiOpen ? '▲' : '▼'}</span>
+              </button>
+
+              {ankiOpen && (
+                <div style={{ marginTop: 8, background: T.s1, border: `1px solid ${T.border}`, borderRadius: T.r2, padding: 16 }}>
+                  <div style={{ fontSize: 12, color: T.textDim, marginBottom: 12, lineHeight: 1.6 }}>
+                    Anki-Export als .txt hochladen (Tab-getrennt: Vorderseite<strong style={{ color: T.textSub }}>[Tab]</strong>Rückseite) oder Text direkt einfügen.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                    <Btn
+                      onClick={() => ankiFileRef.current?.click()}
+                      variant="secondary"
+                      style={{ padding: '9px 16px', fontSize: 13 }}
+                    >
+                      📂 .txt Datei wählen
+                    </Btn>
+                    <input ref={ankiFileRef} type="file" accept=".txt,.tsv" onChange={handleAnkiFile} style={{ display: 'none' }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: T.textDim, marginBottom: 8 }}>— oder Text direkt einfügen —</div>
+                  <textarea
+                    value={ankiText}
+                    onChange={e => setAnkiText(e.target.value)}
+                    rows={6}
+                    placeholder={"Vorderseite\tRückseite\nNächste Karte\tNächste Antwort"}
+                    style={{ marginBottom: 10, fontFamily: 'monospace', fontSize: 13 }}
+                  />
+                  <Btn
+                    onClick={() => importAnki(ankiText)}
+                    disabled={!ankiText.trim()}
+                    full style={{ padding: '10px', fontSize: 14 }}
+                  >
+                    📥 Importieren
+                  </Btn>
+                </div>
+              )}
             </div>
 
           ) : (
