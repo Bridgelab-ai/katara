@@ -5383,26 +5383,39 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
             {!online && <OfflineBadge />}
+            {/* Gear icon — always visible */}
             <button
               onClick={onSettings}
               title="Einstellungen"
               style={{
-                width: 36, height: 36, minWidth: 36, minHeight: 36, borderRadius: '50%', aspectRatio: '1/1', padding: 0,
-                background: user.photoURL ? 'none' : 'rgba(0,212,170,0.1)',
-                border: '2px solid #00D4AA',
+                width: 34, height: 34, minWidth: 34, minHeight: 34, borderRadius: '50%', aspectRatio: '1/1', padding: 0,
+                background: 'rgba(255,255,255,0.07)',
+                border: '1px solid rgba(255,255,255,0.15)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', overflow: 'hidden',
-                boxShadow: '0 0 10px rgba(0,212,170,0.3)',
-                transition: 'box-shadow 0.15s',
+                cursor: 'pointer', fontSize: 16,
+                transition: 'background 0.15s, border-color 0.15s',
               }}
-              onMouseEnter={e => e.currentTarget.style.boxShadow = '0 0 16px rgba(0,212,170,0.6)'}
-              onMouseLeave={e => e.currentTarget.style.boxShadow = '0 0 10px rgba(0,212,170,0.3)'}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,212,170,0.12)'; e.currentTarget.style.borderColor = '#00D4AA' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)' }}
             >
+              ⚙️
+            </button>
+            {/* Avatar circle */}
+            <div style={{
+              width: 36, height: 36, minWidth: 36, minHeight: 36, borderRadius: '50%', aspectRatio: '1/1',
+              border: '2px solid #00D4AA',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden', flexShrink: 0,
+              background: user.photoURL ? 'none' : 'rgba(0,212,170,0.1)',
+              boxShadow: '0 0 10px rgba(0,212,170,0.25)',
+            }}>
               {user.photoURL
                 ? <img src={user.photoURL} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : <span style={{ fontSize: 14, color: '#00D4AA' }}>⚙</span>
+                : <span style={{ fontSize: 15, fontWeight: 700, color: '#00D4AA' }}>
+                    {(user.displayName || user.email || '?')[0].toUpperCase()}
+                  </span>
               }
-            </button>
+            </div>
           </div>
         </div>
         {/* Row 2: Section label + new category button */}
