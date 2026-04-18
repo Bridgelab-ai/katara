@@ -1,34 +1,26 @@
-/* ── Force visibility overrides ──────────────────────────────────────────── */
+/* ── Katara — Application Styles ─────────────────────────────────────────── */
+
+/* ── Global Reset Complement ─────────────────────────────────────────────── */
 * { color: inherit; }
-body { background: #1A1F2E !important; color: #FFFFFF !important; }
-.category-card, [class*="card"] { background: rgba(255,255,255,0.1) !important; border: 1px solid rgba(255,255,255,0.2) !important; }
-[class*="chip"], [class*="button"], button { background: rgba(79,142,247,0.3) !important; color: #FFFFFF !important; border: 1px solid rgba(79,142,247,0.5) !important; }
-input, textarea { background: rgba(255,255,255,0.1) !important; color: #FFFFFF !important; border: 1px solid rgba(255,255,255,0.2) !important; }
 
-/* ── Katara — Global Reset & Base ────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-html { font-size: 16px; }
-
+/* ── Base Body ───────────────────────────────────────────────────────────── */
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   background: #1A1F2E;
   color: #F0F4FF;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
 }
 
-input, textarea, button { font-family: inherit; }
-
-/* ── Static dot-grid background (animation removed) ─────────────────────── */
+/* ── Dot-grid backgrounds ─────────────────────────────────────────────────── */
 .app-bg {
-  min-height: 100vh;
-  background: #1A1F2E;
+  min-height: 100dvh;
+  background-color: #1A1F2E;
   background-image: radial-gradient(circle, rgba(79,142,247,0.11) 1px, transparent 1px);
   background-size: 30px 30px;
 }
 
-/* ── Static dot grid (no animation) ─────────────────────────────────────── */
 .dot-bg {
   background-color: #1A1F2E;
   background-image: radial-gradient(circle, rgba(79,142,247,0.08) 1px, transparent 1px);
@@ -37,42 +29,18 @@ input, textarea, button { font-family: inherit; }
 
 /* ── Glassmorphism card ───────────────────────────────────────────────────── */
 .glass-card {
-  background: rgba(255, 255, 255, 0.08) !important;
-  /* backdrop-filter: blur(20px); */
-  /* -webkit-backdrop-filter: blur(20px); */
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-}
-
-.glass-card:hover {
-  background: rgba(255, 255, 255, 0.11) !important;
-  /* backdrop-filter: blur(24px); */
-  /* -webkit-backdrop-filter: blur(24px); */
-  border-color: rgba(255, 255, 255, 0.22) !important;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 /* ── Frosted glass header ─────────────────────────────────────────────────── */
 .header-glass {
-  background: rgba(10, 14, 26, 0.88) !important;
-  /* backdrop-filter: blur(18px) saturate(1.4); */
-  /* -webkit-backdrop-filter: blur(18px) saturate(1.4); */
-}
-
-/* ── 3D button press effect ───────────────────────────────────────────────── */
-.btn-3d {
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.08) inset,
-    0 -1px 0 rgba(0,0,0,0.3) inset,
-    0 4px 12px rgba(0,0,0,0.35),
-    0 2px 4px rgba(0,0,0,0.2);
-  transition: transform 0.08s, box-shadow 0.08s !important;
-}
-
-.btn-3d:active {
-  transform: scale(0.96) translateY(1px) !important;
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.05) inset,
-    0 -1px 0 rgba(0,0,0,0.2) inset,
-    0 1px 4px rgba(0,0,0,0.25) !important;
+  background: rgba(10,14,26,0.88);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
 }
 
 /* ── Card flip ────────────────────────────────────────────────────────────── */
@@ -86,11 +54,13 @@ input, textarea, button { font-family: inherit; }
   width: 100%;
   transform-style: preserve-3d;
   transition: transform 0.48s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
 }
 
 .flip-inner.flipped { transform: rotateY(180deg); }
 
-.flip-front, .flip-back {
+.flip-front,
+.flip-back {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
@@ -101,59 +71,72 @@ input, textarea, button { font-family: inherit; }
   top: 0; left: 0; width: 100%;
 }
 
-/* ── Progress bar fill animation ─────────────────────────────────────────── */
+/* ── Progress bar ────────────────────────────────────────────────────────── */
 .progress-fill {
   transition: width 0.55s cubic-bezier(0.4, 0, 0.2, 1);
   background: linear-gradient(90deg, #4F8EF7, #7BB8FF);
-  border-radius: 2px;
+  border-radius: var(--r-sm, 8px);
   height: 100%;
 }
 
-.progress-fill-green {
-  background: linear-gradient(90deg, #34D399, #6EE7B7);
-}
+.progress-fill-green { background: linear-gradient(90deg, #34D399, #6EE7B7); }
+.progress-fill-amber { background: linear-gradient(90deg, #FBBF24, #FCD34D); }
 
-.progress-fill-amber {
-  background: linear-gradient(90deg, #FBBF24, #FCD34D);
-}
-
-/* ── Input / Textarea ─────────────────────────────────────────────────────── */
-input[type="text"], input:not([type]), textarea {
+/* ── Inputs ───────────────────────────────────────────────────────────────── */
+input[type="text"],
+input[type="email"],
+input:not([type]),
+textarea {
   width: 100%;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 8px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: var(--r-sm, 8px);
   color: #F0F4FF;
-  padding: 9px 13px;
-  font-size: 14px;
+  padding: 10px 14px;
+  font-size: 15px;
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
   resize: vertical;
+  min-height: var(--touch-min, 48px);
 }
 
 input[type="text"]:focus,
+input[type="email"]:focus,
 input:not([type]):focus,
 textarea:focus {
   border-color: #4F8EF7;
   box-shadow: 0 0 0 3px rgba(79,142,247,0.18);
 }
 
-input::placeholder, textarea::placeholder { color: #7A8BAD; }
+input::placeholder,
+textarea::placeholder { color: #7A8BAD; }
 
-/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #2A3348; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #3A4A66; }
 
-/* ── Focus ring ───────────────────────────────────────────────────────────── */
-button:focus-visible {
+/* ── Focus ring — keyboard navigation ───────────────────────────────────── */
+:focus-visible {
   outline: 2px solid #4F8EF7;
   outline-offset: 2px;
+  border-radius: 4px;
 }
 
-/* ── Drag-over drop zone ─────────────────────────────────────────────────── */
-.drop-zone { transition: all 0.15s; }
+button:focus:not(:focus-visible) { outline: none; }
+
+/* ── Touch target utility ─────────────────────────────────────────────────── */
+.touch-target {
+  min-height: var(--touch-min, 48px);
+  min-width: var(--touch-min, 48px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Drop zone ────────────────────────────────────────────────────────────── */
+.drop-zone { transition: border-color 0.2s ease, background 0.2s ease; }
 .drop-zone.drag-over {
   border-color: #4F8EF7 !important;
   background: rgba(79,142,247,0.08) !important;
@@ -166,36 +149,241 @@ button:focus-visible {
 
 /* ── Skeleton shimmer ────────────────────────────────────────────────────── */
 @keyframes shimmer {
-  0%   { background-position: -200% 0; }
-  100% { background-position:  200% 0; }
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
 }
 
 .shimmer {
-  background: linear-gradient(90deg, #10141E 25%, #161C2C 50%, #10141E 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease infinite;
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.09) 50%,
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 400px 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
 }
 
 /* ── Fade-in ──────────────────────────────────────────────────────────────── */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.fade-in { animation: fadeIn 0.22s ease forwards; }
+.fade-in {
+  animation: fadeIn 0.22s ease forwards;
+}
 
-/* ── Spin (for loading spinners) ─────────────────────────────────────────── */
+/* ── Spin ─────────────────────────────────────────────────────────────────── */
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
 
-/* ── Glow pulse removed ───────────────────────────────────────────────────── */
+/* ── Pulse ────────────────────────────────────────────────────────────────── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+/* ── Glow ─────────────────────────────────────────────────────────────────── */
 .glow-pulse { box-shadow: 0 0 12px rgba(79,142,247,0.3); }
 
-/* ── Mobile ───────────────────────────────────────────────────────────────── */
-@media (max-width: 640px) {
+/* ── 3D button press ──────────────────────────────────────────────────────── */
+.btn-3d {
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 -1px 0 rgba(0,0,0,0.3) inset,
+    0 4px 12px rgba(0,0,0,0.35),
+    0 2px 4px rgba(0,0,0,0.2);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.btn-3d:active {
+  transform: scale(0.96) translateY(1px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 -1px 0 rgba(0,0,0,0.2) inset,
+    0 1px 4px rgba(0,0,0,0.25);
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   RESPONSIVE BREAKPOINTS
+   Mobile  : max-width 767px
+   Tablet  : 768px – 1023px
+   Desktop : 1024px+
+──────────────────────────────────────────────────────────────────────────── */
+
+/* ── MOBILE ───────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* Minimum font size */
+  body { font-size: 15px; }
+
+  /* Inputs larger on mobile for readability */
+  input[type="text"],
+  input[type="email"],
+  input:not([type]),
+  textarea {
+    font-size: 16px; /* prevents iOS zoom */
+    padding: 12px 14px;
+  }
+
+  /* All buttons: thumb-friendly min height */
+  button {
+    min-height: 44px;
+  }
+
+  /* Modals: full-width on mobile */
+  .modal-content {
+    border-radius: var(--r-lg, 20px) var(--r-lg, 20px) 0 0;
+    max-height: 90dvh;
+    overflow-y: auto;
+  }
+
+  /* Card grid: single column */
+  .category-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Larger tap targets */
   .glass-card {
-    background: rgba(255, 255, 255, 0.09) !important;
+    padding: 16px !important;
+  }
+
+  /* Flip card — larger minimum height */
+  .flip-inner { min-height: 220px; }
+}
+
+/* ── TABLET ───────────────────────────────────────────────────────────────── */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .category-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* ── DESKTOP ──────────────────────────────────────────────────────────────── */
+@media (min-width: 1024px) {
+  .category-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+
+  /* Hover effects — desktop only */
+  .glass-card:hover {
+    background: rgba(255,255,255,0.11);
+    border-color: rgba(255,255,255,0.22);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+}
+
+/* ── TOUCH DEVICES — disable all hover side-effects ─────────────────────── */
+@media (hover: none) {
+  .glass-card:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.15);
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Touch press feedback instead */
+  .glass-card:active {
+    opacity: 0.85;
+    transform: scale(0.98);
+  }
+
+  button:active {
+    opacity: 0.75;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   ACCESSIBILITY & SYSTEM PREFERENCES
+──────────────────────────────────────────────────────────────────────────── */
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .flip-inner {
+    transition: none !important;
+  }
+
+  .fade-in {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+
+  .shimmer {
+    animation: none !important;
+    background: rgba(255,255,255,0.06) !important;
+  }
+}
+
+/* ── High contrast mode ───────────────────────────────────────────────────── */
+@media (prefers-contrast: high) {
+  .glass-card {
+    border: 2px solid rgba(255,255,255,0.5) !important;
+  }
+
+  button {
+    border: 2px solid currentColor !important;
+  }
+
+  input,
+  textarea {
+    border: 2px solid rgba(255,255,255,0.6) !important;
+  }
+}
+
+/* ── Forced colors (Windows High Contrast) ───────────────────────────────── */
+@media (forced-colors: active) {
+  .glass-card { border: 1px solid ButtonText; }
+  .shimmer { background: ButtonFace; }
+  .progress-fill { background: Highlight; }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   PRINT STYLES
+──────────────────────────────────────────────────────────────────────────── */
+@media print {
+  /* Hide navigation and interactive UI */
+  header,
+  .header-glass,
+  button,
+  .drop-zone,
+  nav,
+  [role="navigation"] {
+    display: none !important;
+  }
+
+  /* Reset backgrounds for print */
+  body,
+  .app-bg,
+  .dot-bg {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .glass-card {
+    background: #fff !important;
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* Page break control */
+  .glass-card { break-inside: avoid; }
+
+  /* Full width content */
+  .category-grid {
+    grid-template-columns: 1fr 1fr !important;
   }
 }

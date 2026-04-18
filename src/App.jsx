@@ -408,6 +408,31 @@ const CAT_COLORS = [
 ]
 const catColor = id => CAT_COLORS.find(c => c.id === id)?.hex ?? CAT_COLORS[0].hex
 
+// ─── SKELETON LOADERS ─────────────────────────────────────────────────────────
+const Skeleton = ({ width = '100%', height = 18, radius = 8, style = {} }) => (
+  <div className="shimmer" style={{ width, height, borderRadius: radius, flexShrink: 0, ...style }} />
+)
+
+const SkeletonCard = () => {
+  const T = useTheme()
+  return (
+    <div style={{
+      background: T.s2, border: `1px solid ${T.border}`,
+      borderRadius: T.r2, padding: '20px 18px',
+    }}>
+      <Skeleton height={18} width="55%" style={{ marginBottom: 10 }} />
+      <Skeleton height={13} width="35%" style={{ marginBottom: 20, opacity: 0.6 }} />
+      <Skeleton height={6} radius={3} />
+    </div>
+  )
+}
+
+const SkeletonGrid = ({ count = 6 }) => (
+  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+    {Array.from({ length: count }).map((_, i) => <SkeletonCard key={i} />)}
+  </div>
+)
+
 // ─── PRIMITIVES ───────────────────────────────────────────────────────────────
 const Btn = ({ children, onClick, variant = 'primary', disabled = false, style = {}, full = false }) => {
   const T = useTheme()
@@ -458,13 +483,19 @@ const Btn = ({ children, onClick, variant = 'primary', disabled = false, style =
       onMouseLeave={() => { setHov(false); setPressed(false) }}
       onMouseDown={() => !disabled && setPressed(true)}
       onMouseUp={() => setPressed(false)}
+      onTouchStart={() => !disabled && setPressed(true)}
+      onTouchEnd={() => setPressed(false)}
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        gap: 7, padding: '9px 18px', borderRadius: T.r, fontSize: 14,
+        gap: 7, padding: '10px 18px', borderRadius: T.r, fontSize: 14,
         fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'all 0.12s', opacity: disabled ? 0.45 : 1,
+        transition: 'background 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease',
+        opacity: disabled ? 0.45 : 1,
         width: full ? '100%' : 'auto', letterSpacing: 0.2,
         transform: pressed && !disabled ? 'scale(0.96) translateY(1px)' : 'scale(1)',
+        minHeight: 44,
+        WebkitTapHighlightColor: 'transparent',
+        touchAction: 'manipulation',
         ...(variants[variant] || variants.primary),
         ...style,
       }}
@@ -573,6 +604,7 @@ const Modal = ({ children, onClose, width = 480 }) => {
       style={{
         position: 'fixed', inset: 0, zIndex: 500,
         background: 'rgba(8,11,20,0.82)',
+        WebkitBackdropFilter: 'blur(4px)',
         backdropFilter: 'blur(4px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 20,
@@ -680,7 +712,7 @@ const Header = ({ crumbs, onBack, right, title, onNavigate, showSubtitle = false
   const online = useOnline()
   return (
   <div style={{
-    position: 'sticky', top: 0, zIndex: 50,
+    position: 'sticky', top: 0, zIndex: 100,
     background: T.bg,
     borderBottom: `1px solid ${T.border}`,
   }}>
@@ -1751,7 +1783,7 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
   )
 
   return (
-    <div className="app-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, overflowY: 'auto' }}>
+    <div className="app-bg" style={{ position: 'fixed', inset: 0, zIndex: 500, overflowY: 'auto' }}>
       <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 20px 80px' }}>
         <Header title="KI-Kartengenerator" onBack={onClose} />
 
@@ -2493,7 +2525,7 @@ const PublicSetView = ({ shareId, currentUser }) => {
   return (
     <div className="app-bg" style={{ paddingBottom: 60 }}>
       {/* Header */}
-      <div className="header-glass" style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${T.border}` }}>
+      <div className="header-glass" style={{ position: 'sticky', top: 0, zIndex: 100, borderBottom: `1px solid ${T.border}` }}>
         <div style={{ maxWidth: 720, margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
           <Logo size={20} subtitle />
           <div style={{ flex: 1 }} />
@@ -3035,7 +3067,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
       cursor: 'pointer', transition: 'all 0.12s',
     })
     return (
-      <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div className="fade-in" style={{ width: '100%', maxWidth: 480 }}>
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
             <div style={{ fontSize: 40, marginBottom: 10 }}>📖</div>
@@ -3092,7 +3124,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
   // ── KI LOADING ───────────────────────────────────────────────────────────────
   if (phase === 'loading') {
     return (
-      <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="fade-in" style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 42, marginBottom: 16, color: T.acc }}>✦</div>
           <p style={{ color: T.textSub, fontSize: 14 }}>KI wählt optimale Karten aus…</p>
@@ -3129,7 +3161,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     const strongestCard = finalResults.find(r => !falschIds.has(r.card.id) && (r.rating === 'easy' || r.rating === 'richtig'))?.card || null
 
     return (
-      <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, overflowY: 'auto' }}>
+      <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 500, overflowY: 'auto' }}>
         <div style={{ maxWidth: 580, margin: '0 auto', padding: '40px 20px 100px' }}>
           <div className="fade-in" style={{ textAlign: 'center', marginBottom: 28 }}>
             <div style={{ fontSize: 52, marginBottom: 14 }}>{pct >= 80 ? '🎯' : pct >= 50 ? '📈' : '💪'}</div>
@@ -3245,7 +3277,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
   const progress        = uniqueInitial > 0 ? Math.max(0, (uniqueInitial - uniqueRemaining) / uniqueInitial * 100) : 0
 
   return (
-    <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column' }}>
+    <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', flexDirection: 'column' }}>
       {/* Top bar */}
       <div style={{
         background: T.bg,
@@ -4133,7 +4165,7 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
     const goodCount = results.filter(r => r.rating === 'richtig' || r.rating === 'easy').length
     const pct = Math.round(goodCount / results.length * 100)
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div className="fade-in" style={{ textAlign: 'center', maxWidth: 400 }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>{pct >= 80 ? '🌟' : pct >= 50 ? '👍' : '💪'}</div>
           <h2 style={{ fontSize: 26, fontWeight: 800, color: T.text, marginBottom: 8 }}>Super gemacht!</h2>
@@ -4372,7 +4404,7 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: T.bg, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: T.bg, display: 'flex', flexDirection: 'column' }}>
       {/* Top bar */}
       <div style={{ background: T.bg, borderBottom: `1px solid ${T.border}`, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
         <Btn onClick={onClose} variant="secondary" style={{ padding: '6px 12px', fontSize: 13, flexShrink: 0 }}>✕ Beenden</Btn>
@@ -5224,7 +5256,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
       <div style={{
         background: T.bg,
         borderBottom: `1px solid ${T.border}`,
-        position: 'sticky', top: 0, zIndex: 50,
+        position: 'sticky', top: 0, zIndex: 100,
       }}>
         {/* Row 1: Bridgelab · Logo · user */}
         <div style={{
@@ -5350,12 +5382,14 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
           </div>
         )}
 
-        {!loading && items.length === 0 ? (
+        {loading ? (
+          <SkeletonGrid count={wide ? 6 : 4} />
+        ) : items.length === 0 ? (
           <Empty icon="📚" title="Noch keine Kategorien" sub="Wähle einen Schnellstart oben oder erstelle eine eigene Kategorie." />
-        ) : !loading && filtered.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <Empty icon="🔍" title="Keine Treffer" sub={`Keine Kategorie enthält "${search}".`} />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: wide ? 'repeat(auto-fill, minmax(280px, 1fr))' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: wide ? 18 : 14 }}>
+          <div className="category-grid" style={{ display: 'grid', gridTemplateColumns: wide ? 'repeat(auto-fill, minmax(280px, 1fr))' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: wide ? 18 : 14 }}>
             {filtered.map(item => (
               <FolderCard
                 key={item.id} item={item}
@@ -5450,7 +5484,7 @@ Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Begin
       {publicShareData  && <PublicShareModal cards={publicShareData.cards} folderName={publicShareData.name} createdBy={user.displayName || user.email} onClose={() => setPublicShareData(null)} />}
       {movingCat        && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={movingCat.id} onPick={handleCatMove} onClose={() => setMovingCat(null)} />}
       {moving      && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ color: T.textSub, fontSize: 14 }}>Wird verschoben…</div>
         </div>
       )}
@@ -5624,7 +5658,7 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
       {movingSub    && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={cat.id} onPick={handleSubMove} onClose={() => setMovingSub(null)} />}
       {exportData   && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
       {moving       && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ color: T.textSub, fontSize: 14 }}>Wird verschoben…</div>
         </div>
       )}
@@ -5789,7 +5823,7 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
       {movingSs     && <MoveFolderModal uid={uid} mode="pick-subcat" excludeId={sub.id} onPick={handleSsMove} onClose={() => setMovingSs(null)} />}
       {exportData   && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
       {moving       && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(8,11,20,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ color: T.textSub, fontSize: 14 }}>Wird verschoben…</div>
         </div>
       )}
