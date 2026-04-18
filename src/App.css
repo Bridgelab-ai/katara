@@ -17,8 +17,10 @@ body {
 .app-bg {
   min-height: 100dvh;
   background-color: #0D1117;
-  background-image: radial-gradient(circle, rgba(0,212,170,0.07) 1px, transparent 1px);
-  background-size: 24px 24px;
+  background-image:
+    radial-gradient(ellipse at 50% 100%, rgba(0,212,170,0.06) 0%, transparent 60%),
+    radial-gradient(circle, rgba(0,212,170,0.09) 1px, transparent 1px);
+  background-size: 100% 100%, 24px 24px;
 }
 
 .dot-bg {
@@ -180,6 +182,38 @@ button:focus:not(:focus-visible) { outline: none; }
   to   { transform: rotate(360deg); }
 }
 
+/* ── Card light sweep ─────────────────────────────────────────────────────── */
+@keyframes cardSweep {
+  0%, 75%  { transform: translateX(-200%) skewX(-15deg); opacity: 0; }
+  78%      { opacity: 1; }
+  100%     { transform: translateX(500%)  skewX(-15deg); opacity: 0; }
+}
+
+.card-sweep {
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.07) 50%, transparent 100%);
+  animation: cardSweep 7s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* ── Neon teal glow ───────────────────────────────────────────────────────── */
+.neon-teal {
+  box-shadow: 0 0 8px rgba(0,212,170,0.6), 0 0 20px rgba(0,212,170,0.25);
+}
+
+/* ── Counter animate ──────────────────────────────────────────────────────── */
+@keyframes countUp {
+  from { opacity: 0.4; transform: translateY(6px); }
+  to   { opacity: 1;   transform: translateY(0); }
+}
+
+.count-animate {
+  animation: countUp 0.5s ease-out forwards;
+}
+
 /* ── Pulse ────────────────────────────────────────────────────────────────── */
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -192,19 +226,31 @@ button:focus:not(:focus-visible) { outline: none; }
 /* ── 3D button press ──────────────────────────────────────────────────────── */
 .btn-3d {
   box-shadow:
-    0 1px 0 rgba(255,255,255,0.08) inset,
-    0 -1px 0 rgba(0,0,0,0.3) inset,
-    0 4px 12px rgba(0,0,0,0.35),
-    0 2px 4px rgba(0,0,0,0.2);
+    0 1px 0 rgba(255,255,255,0.14) inset,
+    0 -2px 0 rgba(0,0,0,0.45) inset,
+    0 4px 0 #007A60,
+    0 6px 0 #005A45,
+    0 8px 20px rgba(0,0,0,0.45);
   transition: transform 0.08s ease, box-shadow 0.08s ease;
 }
 
-.btn-3d:active {
-  transform: scale(0.96) translateY(1px);
+.btn-3d:hover {
   box-shadow:
-    0 1px 0 rgba(255,255,255,0.05) inset,
-    0 -1px 0 rgba(0,0,0,0.2) inset,
-    0 1px 4px rgba(0,0,0,0.25);
+    0 1px 0 rgba(255,255,255,0.18) inset,
+    0 -2px 0 rgba(0,0,0,0.4) inset,
+    0 4px 0 #008A6A,
+    0 6px 0 #006A50,
+    0 12px 28px rgba(0,212,170,0.3),
+    0 8px 20px rgba(0,0,0,0.4);
+}
+
+.btn-3d:active {
+  transform: translateY(4px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 -1px 0 rgba(0,0,0,0.3) inset,
+    0 1px 0 #007A60,
+    0 2px 8px rgba(0,0,0,0.3);
 }
 
 /* ────────────────────────────────────────────────────────────────────────────

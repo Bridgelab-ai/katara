@@ -398,6 +398,27 @@ const useWide = () => {
   return wide
 }
 
+// ─── COUNTER ANIMATION HOOK ───────────────────────────────────────────────────
+const useCountUp = (target, duration = 800) => {
+  const [val, setVal] = useState(0)
+  const prev = useRef(0)
+  useEffect(() => {
+    const from = prev.current
+    prev.current = target
+    if (from === target || !target) { setVal(target); return }
+    let start = null
+    const step = ts => {
+      if (!start) start = ts
+      const p = Math.min((ts - start) / duration, 1)
+      const ease = 1 - Math.pow(1 - p, 3)
+      setVal(Math.round(from + (target - from) * ease))
+      if (p < 1) requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  }, [target])
+  return val
+}
+
 // ─── CATEGORY COLORS ─────────────────────────────────────────────────────────
 const CAT_COLORS = [
   { id: 'blue',   hex: '#4F8EF7' },
@@ -460,7 +481,7 @@ const Btn = ({ children, onClick, variant = 'primary', disabled = false, style =
     ghost: {
       background: hov ? T.accDim : 'transparent',
       color: T.acc,
-      border: `1px solid ${hov ? T.acc : 'rgba(79,142,247,0.35)'}`,
+      border: `1px solid ${hov ? T.acc : 'rgba(0,212,170,0.30)'}`,
     },
     danger: {
       background: hov ? T.redDim : 'transparent',
@@ -1072,6 +1093,8 @@ const SectionLabel = ({ children }) => {
 const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExport, onSendToPartner, onPublicShare }) => {
   const T = useTheme()
   const [hov, setHov] = useState(false)
+  const cardRef = useRef(null)
+  const [tilt, setTilt] = useState({ rx: 2, ry: 0, lx: 50, ly: 30 })
   const t = useT()
   const groupCount    = item._count ?? 0
   const cardCount     = item._cardCount ?? 0
@@ -1082,15 +1105,23 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
 
   return (
     <div
+      ref={cardRef}
       className={`glass-card`}
       onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
+      onMouseLeave={() => { setHov(false); setTilt({ rx: 2, ry: 0, lx: 50, ly: 30 }) }}
+      onMouseMove={e => {
+        const el = cardRef.current; if (!el) return
+        const r = el.getBoundingClientRect()
+        const dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2)
+        const dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2)
+        setTilt({ rx: -dy * 5, ry: dx * 5, lx: 50 + dx * 25, ly: 30 + dy * 20 })
+      }}
       onClick={onClick}
       style={{
         borderRadius: T.r2,
         padding: '20px 18px',
         cursor: 'pointer',
-        transition: 'all 0.18s',
+        transition: 'box-shadow 0.15s ease, background 0.15s ease',
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
@@ -1098,11 +1129,24 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         border: '1px solid rgba(255,255,255,0.08)',
         borderLeft: `3px solid ${color}`,
         boxShadow: hov
-          ? `0 12px 32px rgba(0,0,0,0.5), 0 0 0 1px ${color}22`
-          : `0 4px 16px rgba(0,0,0,0.35)`,
-        transform: hov ? 'translateY(-2px)' : 'none',
+          ? `0 1px 0 rgba(255,255,255,0.06) inset, 0 -1px 0 rgba(0,0,0,0.4) inset, 0 8px 20px rgba(0,0,0,0.5), 0 20px 40px rgba(0,0,0,0.35), -4px 0 16px ${color}55`
+          : `0 1px 0 rgba(255,255,255,0.04) inset, 0 -1px 0 rgba(0,0,0,0.3) inset, 0 4px 12px rgba(0,0,0,0.4), -3px 0 10px ${color}33`,
+        transform: hov
+          ? `perspective(600px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) translateY(-4px)`
+          : `perspective(600px) rotateX(2deg) rotateY(0deg)`,
+        willChange: 'transform',
       }}
     >
+      {/* Specular highlight */}
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: T.r2, pointerEvents: 'none',
+        background: `radial-gradient(circle at ${tilt.lx}% ${tilt.ly}%, rgba(255,255,255,0.07) 0%, transparent 55%)`,
+        transition: 'background 0.08s',
+      }} />
+      {/* Light sweep */}
+      <div style={{ position: 'absolute', inset: 0, borderRadius: T.r2, pointerEvents: 'none', overflow: 'hidden' }}>
+        <div className="card-sweep" style={{ animationDelay: `${((item.id?.charCodeAt(0) || 0) % 5) + 1}s` }} />
+      </div>
       {/* Icon */}
       <div style={{
         width: 38, height: 38, borderRadius: 9,
@@ -1116,11 +1160,11 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
       </div>
 
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: T.text, lineHeight: 1.3, marginBottom: 6 }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: T.text, lineHeight: 1.3, marginBottom: 6 }}>
           {item.name}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: T.textSub }}>
+          <span style={{ fontSize: 12, color: '#00D4AA99' }}>
             {groupCount} {groupCount === 1 ? 'Gruppe' : 'Gruppen'}
           </span>
           {cardCount > 0 && (
@@ -4988,6 +5032,11 @@ const ProgressDashboard = ({ streak, totalCards, weeklyMinutes, items, loading }
   const totalDue      = items.reduce((s, i) => s + (i._dueCount || 0), 0)
   const totalCards_   = items.reduce((s, i) => s + (i._cardCount || 0), 0)
 
+  const animStreak   = useCountUp(streak)
+  const animMastered = useCountUp(totalMastered)
+  const animDue      = useCountUp(totalDue)
+  const animCards    = useCountUp(totalCards)
+
   // Only show the collapsed bar if there's something to display
   const hasData = streak > 0 || totalCards > 0 || weeklyMinutes > 0 || totalMastered > 0
 
@@ -4996,7 +5045,7 @@ const ProgressDashboard = ({ streak, totalCards, weeklyMinutes, items, loading }
   const stat = (icon, value, label, color = T.textSub) => (
     <div style={{ textAlign: 'center', padding: '12px 8px', minWidth: 72 }}>
       <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1, textShadow: `0 0 10px ${color}66` }}>{value}</div>
       <div style={{ fontSize: 10, color: T.textDim, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.6, lineHeight: 1.3 }}>{label}</div>
     </div>
   )
@@ -5016,7 +5065,10 @@ const ProgressDashboard = ({ streak, totalCards, weeklyMinutes, items, loading }
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           {streak > 0 && (
-            <span style={{ fontSize: 13, fontWeight: 700, color: T.amber }}>
+            <span style={{
+              fontSize: 13, fontWeight: 700, color: T.amber,
+              textShadow: `0 0 8px ${T.amber}99, 0 0 20px ${T.amber}55`,
+            }}>
               🔥 {streak} {streak === 1 ? 'Tag' : 'Tage'}
             </span>
           )}
@@ -5052,10 +5104,10 @@ const ProgressDashboard = ({ streak, totalCards, weeklyMinutes, items, loading }
         }}>
           {/* 4-stat grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, marginBottom: 12 }}>
-            {stat('🔥', streak, 'Streak', T.amber)}
-            {stat('⭐', totalMastered, 'Gemeistert', '#A78BFA')}
-            {stat('📅', totalDue, 'Fällig heute', totalDue > 0 ? T.amber : T.textSub)}
-            {stat('📚', totalCards.toLocaleString('de-DE'), 'Gesamt gelernt', T.acc)}
+            {stat('🔥', animStreak, 'Streak', T.amber)}
+            {stat('⭐', animMastered, 'Gemeistert', '#A78BFA')}
+            {stat('📅', animDue, 'Fällig heute', totalDue > 0 ? T.amber : T.textSub)}
+            {stat('📚', animCards.toLocaleString('de-DE'), 'Gesamt gelernt', T.acc)}
           </div>
 
           {/* Weekly bar */}
@@ -5275,55 +5327,77 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
 
   return (
     <div className="app-bg" style={{ minHeight: '100vh', opacity: 1, filter: 'none' }}>
-      {/* Top bar — two rows */}
+      {/* Top bar */}
       <div style={{
-        background: T.bg,
-        borderBottom: `1px solid ${T.border}`,
+        background: 'rgba(13,17,23,0.92)',
+        WebkitBackdropFilter: 'blur(20px)', backdropFilter: 'blur(20px)',
+        borderBottom: '2px solid #00D4AA',
+        boxShadow: '0 4px 30px rgba(0,0,0,0.5)',
         position: 'sticky', top: 0, zIndex: 100,
       }}>
-        {/* Row 1: Bridgelab · Logo · user */}
+        {/* Row 1: Bridgelab · Logo · avatar */}
         <div style={{
           display: 'flex', alignItems: 'center',
-          padding: `7px ${wide ? 40 : 28}px`,
-          borderBottom: `1px solid ${T.border}44`,
+          padding: `8px ${wide ? 40 : 20}px`,
+          borderBottom: 'none',
         }}>
           <a
             href="https://vocara-peach.vercel.app"
-            style={{ fontSize: 12, color: T.textDim, textDecoration: 'none', fontWeight: 500, letterSpacing: 0.3, transition: 'color 0.12s', flexShrink: 0 }}
-            onMouseEnter={e => e.currentTarget.style.color = T.textSub}
+            style={{ fontSize: 11, color: T.textDim, textDecoration: 'none', fontWeight: 500, letterSpacing: 0.3, transition: 'color 0.12s', flexShrink: 0 }}
+            onMouseEnter={e => e.currentTarget.style.color = '#00D4AA'}
             onMouseLeave={e => e.currentTarget.style.color = T.textDim}
           >← Bridgelab</a>
           <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-            <Logo size={26} subtitle />
+            <Logo size={28} />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
             {!online && <OfflineBadge />}
-            <span style={{ fontSize: 12, color: T.textDim }}>
-              {user.displayName?.split(' ')[0]}
-            </span>
-            <Btn onClick={onSettings} variant="secondary" style={{ padding: '5px 10px', fontSize: 13 }}>⚙</Btn>
-            <Btn onClick={() => signOut(auth)} variant="secondary" style={{ padding: '5px 12px', fontSize: 12 }}>{t.signOut}</Btn>
+            <button
+              onClick={onSettings}
+              title="Einstellungen"
+              style={{
+                width: 34, height: 34, borderRadius: '50%', padding: 0,
+                background: user.photoURL ? 'none' : 'rgba(0,212,170,0.1)',
+                border: '2px solid #00D4AA',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', overflow: 'hidden',
+                boxShadow: '0 0 10px rgba(0,212,170,0.3)',
+                transition: 'box-shadow 0.15s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.boxShadow = '0 0 16px rgba(0,212,170,0.6)'}
+              onMouseLeave={e => e.currentTarget.style.boxShadow = '0 0 10px rgba(0,212,170,0.3)'}
+            >
+              {user.photoURL
+                ? <img src={user.photoURL} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <span style={{ fontSize: 14, color: '#00D4AA' }}>⚙</span>
+              }
+            </button>
           </div>
         </div>
-        {/* Row 2: Title + streak + New Category */}
+        {/* Row 2: Section label + new category button */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: `9px ${wide ? 40 : 28}px`,
+          padding: `6px ${wide ? 40 : 20}px`,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{t.home}</span>
-            {streak > 0 && (
-              <span style={{
-                fontSize: 12, fontWeight: 700, color: '#fff',
-                background: T.amber, borderRadius: 20,
-                padding: '3px 11px', letterSpacing: 0.2,
-                boxShadow: `0 2px 8px ${T.amber}55`,
-              }}>🔥 {streak} {streak === 1 ? 'Tag' : 'Tage'}</span>
-            )}
-          </div>
-          <Btn onClick={() => setModal(true)} style={{ padding: '7px 16px', fontSize: 13 }}>
-            {t.newCategory}
-          </Btn>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1.4, textTransform: 'uppercase' }}>Meine Kategorien</span>
+          <button
+            onClick={() => setModal(true)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '5px 14px', borderRadius: T.r,
+              background: 'transparent', border: '1px solid #00D4AA',
+              color: '#00D4AA', fontSize: 12, fontWeight: 700,
+              cursor: 'pointer', transition: 'all 0.15s',
+              boxShadow: '0 0 8px rgba(0,212,170,0.2)',
+              letterSpacing: 0.3,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,212,170,0.12)'; e.currentTarget.style.boxShadow = '0 0 14px rgba(0,212,170,0.45)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.boxShadow = '0 0 8px rgba(0,212,170,0.2)' }}
+            onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.96)' }}
+            onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)' }}
+          >
+            + Kategorie
+          </button>
         </div>
       </div>
 
@@ -5363,7 +5437,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
         {/* Schnellstart — always visible */}
         {!loading && (
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.textSub, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>Schnellstart</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textDim, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 10 }}>Schnellstart</div>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
               {[
                 { icon: '💼', label: 'Beruf',   hex: '#E74C3C', bg: 'rgba(231,76,60,0.18)'    },
@@ -5392,9 +5466,20 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
                       cursor: quickLoading ? 'not-allowed' : 'pointer',
                       transition: 'all 0.15s', opacity: quickLoading && !isLoading ? 0.45 : 1,
                       letterSpacing: 0.2,
+                      boxShadow: `0 1px 0 rgba(255,255,255,0.12) inset, 0 -1px 0 rgba(0,0,0,0.25) inset, 0 4px 10px rgba(0,0,0,0.28)`,
                     }}
-                    onMouseEnter={e => { if (!quickLoading) { e.currentTarget.style.background = `${hex}44`; e.currentTarget.style.borderColor = `${hex}99` } }}
-                    onMouseLeave={e => { if (!quickLoading) { e.currentTarget.style.background = bg; e.currentTarget.style.borderColor = `${hex}66` } }}
+                    onMouseEnter={e => { if (!quickLoading) {
+                      e.currentTarget.style.background = `${hex}44`
+                      e.currentTarget.style.borderColor = `${hex}99`
+                      e.currentTarget.style.transform = 'translateY(-2px)'
+                      e.currentTarget.style.boxShadow = `0 1px 0 rgba(255,255,255,0.14) inset, 0 -1px 0 rgba(0,0,0,0.2) inset, 0 8px 18px rgba(0,0,0,0.3), 0 0 14px ${hex}55`
+                    }}}
+                    onMouseLeave={e => { if (!quickLoading) {
+                      e.currentTarget.style.background = bg
+                      e.currentTarget.style.borderColor = `${hex}66`
+                      e.currentTarget.style.transform = 'translateY(0)'
+                      e.currentTarget.style.boxShadow = `0 1px 0 rgba(255,255,255,0.12) inset, 0 -1px 0 rgba(0,0,0,0.25) inset, 0 4px 10px rgba(0,0,0,0.28)`
+                    }}}
                   >
                     {isLoading ? <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', fontSize: 12 }}>⟳</span> : <span style={{ fontSize: 15 }}>{icon}</span>}
                     {isLoading ? 'KI generiert Karten…' : label}
@@ -5412,7 +5497,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
         ) : filtered.length === 0 ? (
           <Empty icon="🔍" title="Keine Treffer" sub={`Keine Kategorie enthält "${search}".`} />
         ) : (
-          <div className="category-grid" style={{ display: 'grid', gridTemplateColumns: wide ? 'repeat(auto-fill, minmax(280px, 1fr))' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: wide ? 18 : 14 }}>
+          <div className="category-grid" style={{ display: 'grid', gridTemplateColumns: wide ? 'repeat(auto-fill, minmax(280px, 1fr))' : 'repeat(auto-fill, minmax(240px, 1fr))', gap: wide ? 18 : 14, perspective: '1200px', perspectiveOrigin: '50% 0%' }}>
             {filtered.map(item => (
               <FolderCard
                 key={item.id} item={item}
