@@ -144,7 +144,8 @@ const PartnerContext = createContext({ partnerUid: null, partnerName: null })
 const usePartner = () => useContext(PartnerContext)
 
 // ─── KI CONTENT RULES ────────────────────────────────────────────────────────
-const KI_CONTENT_RULES = `Genauigkeit ist oberstes Gebot: Alle Fakten, Farben, Zahlen, Formen und Aussprachen müssen 100% korrekt sein. Niemals raten oder approximieren.
+const KI_CONTENT_RULES = `CRITICAL: Every color name must match its actual color. Every number must match the count of objects shown. Every shape name must match the shape displayed. Accuracy is non-negotiable.
+Genauigkeit ist oberstes Gebot: Alle Fakten, Farben, Zahlen, Formen und Aussprachen müssen 100% korrekt sein. Niemals raten oder approximieren.
 Pflichtregeln für alle Karten (unbedingt einhalten):
 - Kein religiöser Inhalt (keine Gebete, religiösen Rituale, Glaubenssätze oder spirituellen Praktiken)
 - Keine praktischen Übungen oder physischen Aufgaben (kein "Gehe raus und tu X", kein "Führe diese Übung durch", kein "Schreibe auf Papier")
@@ -4360,30 +4361,37 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
 
   // Color swatch for 'farbe' type
   const COLOR_MAP = {
-    rot:     '#E74C3C',
-    gelb:    '#F1C40F',
-    blau:    '#3498DB',
-    grün:    '#27AE60',
-    orange:  '#E67E22',
-    lila:    '#9B59B6',
-    rosa:    '#FF69B4',
-    weiß:    '#FFFFFF',
-    schwarz: '#1A1A1A',
-    braun:   '#8B4513',
+    rot: '#E74C3C', red: '#E74C3C',
+    gelb: '#F1C40F', yellow: '#F1C40F',
+    blau: '#3498DB', blue: '#3498DB',
+    grün: '#27AE60', green: '#27AE60',
+    orange: '#E67E22',
+    lila: '#9B59B6', purple: '#9B59B6', violet: '#9B59B6',
+    rosa: '#FF69B4', pink: '#FF69B4',
+    weiß: '#FFFFFF', weiss: '#FFFFFF', white: '#FFFFFF',
+    schwarz: '#111111', black: '#111111',
+    braun: '#8B4513', brown: '#8B4513',
+    grau: '#95A5A6', grey: '#95A5A6', gray: '#95A5A6',
   }
-  const colorKey = Object.keys(COLOR_MAP).find(k =>
-    (card.front || '').toLowerCase().includes(k) ||
-    (card.back  || '').toLowerCase().includes(k) ||
-    (card.back_de || '').toLowerCase().includes(k)
-  )
-  // Always derive from text — never trust AI-provided colorHex (may be wrong)
-  const swatchColor = colorKey ? COLOR_MAP[colorKey] : (card.colorHex || T.acc)
+  const allCardText = [card.front, card.back, card.back_de, card.back_en, card.colorHex]
+    .filter(Boolean).join(' ').toLowerCase()
+  const colorKey = Object.keys(COLOR_MAP).find(k => allCardText.includes(k))
+  // Always derive from name — never trust AI-provided colorHex
+  const swatchColor = colorKey ? COLOR_MAP[colorKey] : '#95A5A6'
 
   // ── CARD VISUAL by type ───────────────────────────────────────────────────────
+  const NUM_WORDS = { null:0,eins:1,ein:1,one:1,zwei:2,two:2,drei:3,three:3,vier:4,four:4,fünf:5,five:5,sechs:6,six:6,sieben:7,seven:7,acht:8,eight:8,neun:9,nine:9,zehn:10,ten:10 }
+  const parseCount = (cd) => {
+    if (typeof cd.count === 'number' && cd.count > 0) return cd.count
+    const haystack = (cd.back_de || cd.back || cd.front || '').toLowerCase()
+    const byWord = Object.entries(NUM_WORDS).find(([w]) => w && haystack.includes(w))
+    if (byWord) return byWord[1]
+    return parseInt(haystack) || parseInt(cd.front || '') || 3
+  }
+
   const CardVisual = ({ showAnswer = false }) => {
     if (cardType === 'zählen') {
-      // Show the emoji repeated `count` times, large, wrapped
-      const countNum = typeof card.count === 'number' ? card.count : 3
+      const countNum = parseCount(card)
       return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
           <div style={{
@@ -4407,7 +4415,7 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
     }
     if (cardType === 'zahl') {
       // Show the digit very large + emoji repeated count times below
-      const countNum = typeof card.count === 'number' ? card.count : parseInt(card.front) || 1
+      const countNum = parseCount(card)
       return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
           <div style={{
@@ -4433,10 +4441,12 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
       return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
           <div style={{
-            width: 110, height: 110, borderRadius: 20,
+            width: 120, height: 120, borderRadius: 20,
             background: swatchColor,
-            boxShadow: `0 0 40px ${swatchColor}88, 0 6px 20px rgba(0,0,0,0.4)`,
-            border: '3px solid rgba(255,255,255,0.18)',
+            boxShadow: swatchColor === '#FFFFFF' ? '0 4px 20px rgba(0,0,0,0.3)' : `0 0 30px ${swatchColor}99, 0 6px 20px rgba(0,0,0,0.4)`,
+            border: swatchColor === '#FFFFFF' || swatchColor === '#111111'
+              ? '2px solid rgba(255,255,255,0.4)'
+              : '2px solid rgba(255,255,255,0.15)',
           }} />
           {showAnswer && (
             <>
@@ -4592,9 +4602,12 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
                 {choices.map(val => {
                   const isColorChoice = cardType === 'farbe'
                   const COLOR_HEX_MAP = {
-                    rot:'#E74C3C',gelb:'#F1C40F',blau:'#3498DB',grün:'#27AE60',
-                    orange:'#E67E22',lila:'#9B59B6',rosa:'#FF69B4',braun:'#8B4513',
-                    schwarz:'#1A1A1A',weiß:'#F8F8F8',
+                    rot:'#E74C3C',red:'#E74C3C',gelb:'#F1C40F',yellow:'#F1C40F',
+                    blau:'#3498DB',blue:'#3498DB',grün:'#27AE60',green:'#27AE60',
+                    orange:'#E67E22',lila:'#9B59B6',purple:'#9B59B6',
+                    rosa:'#FF69B4',pink:'#FF69B4',braun:'#8B4513',brown:'#8B4513',
+                    schwarz:'#111111',black:'#111111',weiß:'#FFFFFF',white:'#FFFFFF',
+                    grau:'#95A5A6',grey:'#95A5A6',
                   }
                   return (
                     <button
@@ -5617,7 +5630,7 @@ Types allowed:
 - "form": shape naming. front=shape name in German, shape=one of: kreis,dreieck,quadrat,rechteck,oval,stern,herz
 - "bild": picture naming. front=German word for the object, emoji=matching emoji, back_de=German word, back_en=English word
 
-ACCURACY IS PARAMOUNT: Every color name MUST match its colorHex exactly. Every count MUST match the count field. Every shape name MUST match the shape field. Double-check all values before returning. Never approximate or guess.
+CRITICAL: Every color name MUST match its colorHex exactly (Rot=#E74C3C, Gelb=#F1C40F, Blau=#3498DB, Grün=#27AE60, Orange=#E67E22, Lila=#9B59B6, Rosa=#FF69B4, Weiß=#FFFFFF, Schwarz=#111111, Braun=#8B4513). Every count field MUST equal the exact number of objects described. Every shape field MUST match the shape name. Double-check every field before returning. Accuracy is non-negotiable.
 Include a mix of all 6 types (at least 2 of each). ALL fields must be filled.
 Return ONLY a valid JSON array, no markdown:
 [{"type":"buchstabe","front":"A","back":"Apfel","back_de":"Apfel","back_en":"Apple","emoji":"🍎","backShort":"A"},{"type":"zählen","front":"Wie viele?","back":"drei","back_de":"drei","back_en":"three","emoji":"🐥","count":3,"backShort":"3"},{"type":"farbe","front":"Rot","back":"rot","back_de":"rot","back_en":"red","colorHex":"#EF4444","emoji":"🍎","backShort":"red"},{"type":"form","front":"Kreis","back":"Kreis","back_de":"Kreis","back_en":"Circle","shape":"kreis","backShort":"○"},{"type":"zahl","front":"5","back":"fünf","back_de":"fünf","back_en":"five","emoji":"⭐","count":5,"backShort":"5"},{"type":"bild","front":"Hund","back":"Hund","back_de":"Hund","back_en":"Dog","emoji":"🐕","backShort":"Dog"}]`
