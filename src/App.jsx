@@ -144,7 +144,8 @@ const PartnerContext = createContext({ partnerUid: null, partnerName: null })
 const usePartner = () => useContext(PartnerContext)
 
 // ─── KI CONTENT RULES ────────────────────────────────────────────────────────
-const KI_CONTENT_RULES = `Pflichtregeln für alle Karten (unbedingt einhalten):
+const KI_CONTENT_RULES = `Genauigkeit ist oberstes Gebot: Alle Fakten, Farben, Zahlen, Formen und Aussprachen müssen 100% korrekt sein. Niemals raten oder approximieren.
+Pflichtregeln für alle Karten (unbedingt einhalten):
 - Kein religiöser Inhalt (keine Gebete, religiösen Rituale, Glaubenssätze oder spirituellen Praktiken)
 - Keine praktischen Übungen oder physischen Aufgaben (kein "Gehe raus und tu X", kein "Führe diese Übung durch", kein "Schreibe auf Papier")
 - Ausschließlich theoretisches, faktenbasiertes Lernmaterial
@@ -653,7 +654,7 @@ const Modal = ({ children, onClose, width = 480 }) => {
 }
 
 // ─── LOGO ─────────────────────────────────────────────────────────────────────
-const Logo = ({ size = 26, subtitle = false }) => {
+const Logo = ({ size = 26 }) => {
   return (
   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
     <div style={{
@@ -665,20 +666,9 @@ const Logo = ({ size = 26, subtitle = false }) => {
     }}>
       Katara
     </div>
-    <div style={{
-      width: '40%', height: 2, borderRadius: 1,
-      background: '#00D4AA',
-      marginTop: 4, marginBottom: subtitle ? 4 : 3,
-      opacity: 0.7,
-    }} />
-    {subtitle
-      ? <div style={{ fontSize: Math.max(8, size * 0.38), color: '#888', letterSpacing: '0.2em', marginTop: 1, fontWeight: 500, textTransform: 'uppercase' }}>
-          Strukturiertes Lernen
-        </div>
-      : <div style={{ fontSize: 11, color: '#FFD700', letterSpacing: '0.3em', fontWeight: 600, textTransform: 'uppercase', opacity: 0.9 }}>
-          by Bridgelab
-        </div>
-    }
+    <div style={{ fontSize: 11, color: '#888', letterSpacing: '0.2em', marginTop: 5, fontWeight: 500 }}>
+      by Bridgelab
+    </div>
   </div>
   )
 }
@@ -1138,9 +1128,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
-        background: hov
-          ? `linear-gradient(145deg, #222A3E, #1A2030)`
-          : `linear-gradient(145deg, #1E2535, #161B22)`,
+        background: hov ? '#1C2333' : '#161B22',
         borderTop: hov ? '1px solid rgba(255,255,255,0.18)' : '1px solid rgba(255,255,255,0.12)',
         borderRight: '1px solid rgba(255,255,255,0.05)',
         borderBottom: '1px solid rgba(255,255,255,0.04)',
@@ -2691,7 +2679,7 @@ const PublicSetView = ({ shareId, currentUser }) => {
           )}
           {comments.map(c => (
             <div key={c.id} style={{ display:'flex', gap: 10, marginBottom: 14 }}>
-              <div style={{ width: 32, height: 32, minWidth: 32, borderRadius: '50%', background: T.accDim, border:`1px solid ${T.acc}44`, display:'flex', alignItems:'center', justifyContent:'center', fontSize: 13, fontWeight: 700, color: T.acc, flexShrink: 0 }}>
+              <div style={{ width: 32, height: 32, minWidth: 32, minHeight: 32, aspectRatio: '1/1', borderRadius: '50%', background: T.accDim, border:`1px solid ${T.acc}44`, display:'flex', alignItems:'center', justifyContent:'center', fontSize: 13, fontWeight: 700, color: T.acc, flexShrink: 0 }}>
                 {(c.authorName||'?')[0].toUpperCase()}
               </div>
               <div style={{ flex: 1 }}>
@@ -4347,16 +4335,22 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
   const ShapeSvg = ({ shape }) => {
     const s = (shape || '').toLowerCase()
     const shapeEl = s === 'kreis' || s === 'circle'
-      ? <circle cx="60" cy="60" r="50" fill={T.acc} opacity="0.85" />
+      ? <circle cx="60" cy="60" r="52" fill={T.acc} opacity="0.9" />
       : s === 'dreieck' || s === 'triangle'
-      ? <polygon points="60,8 112,110 8,110" fill={T.amber} opacity="0.85" />
+      ? <polygon points="60,5 115,112 5,112" fill={T.amber} opacity="0.9" />
       : s === 'stern' || s === 'star'
-      ? <polygon points="60,5 72,40 110,40 80,62 92,98 60,75 28,98 40,62 10,40 48,40" fill="#FBBF24" opacity="0.9" />
+      ? <polygon points="60,5 73,40 110,40 81,62 93,98 60,76 27,98 39,62 10,40 47,40" fill="#FBBF24" opacity="0.9" />
       : s === 'herz' || s === 'heart'
-      ? <path d="M60 100 C20 70 5 50 5 35 A25 25 0 0 1 60 25 A25 25 0 0 1 115 35 C115 50 100 70 60 100Z" fill={T.red} opacity="0.85" />
+      ? <path d="M60 95 C25 68 5 52 5 35 Q5 10 30 10 Q45 10 60 28 Q75 10 90 10 Q115 10 115 35 C115 52 95 68 60 95Z" fill={T.red} opacity="0.9" />
       : s === 'raute' || s === 'diamond'
-      ? <polygon points="60,5 115,60 60,115 5,60" fill="#A78BFA" opacity="0.85" />
-      : /* default rectangle */ <rect x="5" y="25" width="110" height="70" rx="8" fill={T.green} opacity="0.85" />
+      ? <polygon points="60,5 115,60 60,115 5,60" fill="#A78BFA" opacity="0.9" />
+      : s === 'oval' || s === 'ellipse'
+      ? <ellipse cx="60" cy="60" rx="55" ry="38" fill="#34D399" opacity="0.9" />
+      : s === 'quadrat' || s === 'square'
+      ? <rect x="10" y="10" width="100" height="100" fill={T.green} opacity="0.9" />
+      : s === 'rechteck' || s === 'rectangle'
+      ? <rect x="5" y="25" width="110" height="70" rx="4" fill={T.green} opacity="0.9" />
+      : /* default viereck */ <rect x="5" y="25" width="110" height="70" rx="4" fill={T.green} opacity="0.9" />
     return (
       <svg width="120" height="120" viewBox="0 0 120 120" style={{ display: 'block', margin: '0 auto' }}>
         {shapeEl}
@@ -4366,21 +4360,24 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
 
   // Color swatch for 'farbe' type
   const COLOR_MAP = {
-    rot: '#EF4444', rot_en: 'red',
-    blau: '#3B82F6', blau_en: 'blue',
-    grün: '#22C55E', grün_en: 'green',
-    gelb: '#EAB308', gelb_en: 'yellow',
-    orange: '#F97316', orange_en: 'orange',
-    lila: '#A855F7', lila_en: 'purple',
-    rosa: '#EC4899', rosa_en: 'pink',
-    schwarz: '#1F2937', schwarz_en: 'black',
-    weiß: '#F9FAFB', weiß_en: 'white',
-    braun: '#92400E', braun_en: 'brown',
+    rot:     '#E74C3C',
+    gelb:    '#F1C40F',
+    blau:    '#3498DB',
+    grün:    '#27AE60',
+    orange:  '#E67E22',
+    lila:    '#9B59B6',
+    rosa:    '#FF69B4',
+    weiß:    '#FFFFFF',
+    schwarz: '#1A1A1A',
+    braun:   '#8B4513',
   }
-  const colorKey = Object.keys(COLOR_MAP).find(k => !k.endsWith('_en') && (
-    (card.front || '').toLowerCase().includes(k) || (card.back || '').toLowerCase().includes(k)
-  ))
-  const swatchColor = card.colorHex || (colorKey ? COLOR_MAP[colorKey] : T.acc)
+  const colorKey = Object.keys(COLOR_MAP).find(k =>
+    (card.front || '').toLowerCase().includes(k) ||
+    (card.back  || '').toLowerCase().includes(k) ||
+    (card.back_de || '').toLowerCase().includes(k)
+  )
+  // Always derive from text — never trust AI-provided colorHex (may be wrong)
+  const swatchColor = colorKey ? COLOR_MAP[colorKey] : (card.colorHex || T.acc)
 
   // ── CARD VISUAL by type ───────────────────────────────────────────────────────
   const CardVisual = ({ showAnswer = false }) => {
@@ -4471,12 +4468,16 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
       return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
           {card.image && card.image.startsWith('http')
-            ? <img src={card.image} alt={card.front} style={{ width: 120, height: 120, objectFit: 'contain', borderRadius: 18 }} />
+            ? <img src={card.image} alt="" style={{ width: 120, height: 120, objectFit: 'contain', borderRadius: 18 }} />
             : <div style={{ fontSize: 96, lineHeight: 1 }}>{card.emoji}</div>
           }
-          <div style={{ fontSize: 34, fontWeight: 800, color: T.text, lineHeight: 1.2 }}>{wordDe}</div>
-          {wordEn && wordEn !== wordDe && (
-            <div style={{ fontSize: 22, color: T.textSub, fontWeight: 600 }}>{wordEn}</div>
+          {showAnswer && (
+            <>
+              <div style={{ fontSize: 34, fontWeight: 800, color: T.text, lineHeight: 1.2 }}>{wordDe}</div>
+              {wordEn && wordEn !== wordDe && (
+                <div style={{ fontSize: 22, color: T.textSub, fontWeight: 600 }}>{wordEn}</div>
+              )}
+            </>
           )}
         </div>
       )
@@ -4591,9 +4592,9 @@ const VorschuleLearnMode = ({ cards: initCards, cardsPath, cat, uid, onClose }) 
                 {choices.map(val => {
                   const isColorChoice = cardType === 'farbe'
                   const COLOR_HEX_MAP = {
-                    rot:'#EF4444',blau:'#3B82F6',grün:'#22C55E',gelb:'#EAB308',
-                    orange:'#F97316',lila:'#A855F7',rosa:'#EC4899',braun:'#92400E',
-                    schwarz:'#374151',weiß:'#F9FAFB',
+                    rot:'#E74C3C',gelb:'#F1C40F',blau:'#3498DB',grün:'#27AE60',
+                    orange:'#E67E22',lila:'#9B59B6',rosa:'#FF69B4',braun:'#8B4513',
+                    schwarz:'#1A1A1A',weiß:'#F8F8F8',
                   }
                   return (
                     <button
@@ -5386,7 +5387,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
               onClick={onSettings}
               title="Einstellungen"
               style={{
-                width: 36, height: 36, minWidth: 36, borderRadius: '50%', padding: 0,
+                width: 36, height: 36, minWidth: 36, minHeight: 36, borderRadius: '50%', aspectRatio: '1/1', padding: 0,
                 background: user.photoURL ? 'none' : 'rgba(0,212,170,0.1)',
                 border: '2px solid #00D4AA',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -5599,10 +5600,11 @@ Types allowed:
 - "buchstabe": letter recognition. front=single capital letter, emoji=object starting with that letter
 - "zahl": number recognition. front=digit as string ("3"), count=that number (3), emoji=small countable object
 - "zählen": counting task. front="Wie viele?", emoji=a single countable object emoji, count=2-5 (NEVER 1), back_de=German number word, back_en=English number word
-- "farbe": color naming. front=color name in German, colorHex=hex code, emoji=colored object in that color
-- "form": shape naming. front=shape name in German, shape=one of: kreis,dreieck,viereck,stern,herz
+- "farbe": color naming. front=color name in German, colorHex=EXACT hex (Rot=#E74C3C, Gelb=#F1C40F, Blau=#3498DB, Grün=#27AE60, Orange=#E67E22, Lila=#9B59B6, Rosa=#FF69B4, Weiß=#FFFFFF, Schwarz=#1A1A1A, Braun=#8B4513), emoji=colored object in that color
+- "form": shape naming. front=shape name in German, shape=one of: kreis,dreieck,quadrat,rechteck,oval,stern,herz
 - "bild": picture naming. front=German word for the object, emoji=matching emoji, back_de=German word, back_en=English word
 
+ACCURACY IS PARAMOUNT: Every color name MUST match its colorHex exactly. Every count MUST match the count field. Every shape name MUST match the shape field. Double-check all values before returning. Never approximate or guess.
 Include a mix of all 6 types (at least 2 of each). ALL fields must be filled.
 Return ONLY a valid JSON array, no markdown:
 [{"type":"buchstabe","front":"A","back":"Apfel","back_de":"Apfel","back_en":"Apple","emoji":"🍎","backShort":"A"},{"type":"zählen","front":"Wie viele?","back":"drei","back_de":"drei","back_en":"three","emoji":"🐥","count":3,"backShort":"3"},{"type":"farbe","front":"Rot","back":"rot","back_de":"rot","back_en":"red","colorHex":"#EF4444","emoji":"🍎","backShort":"red"},{"type":"form","front":"Kreis","back":"Kreis","back_de":"Kreis","back_en":"Circle","shape":"kreis","backShort":"○"},{"type":"zahl","front":"5","back":"fünf","back_de":"fünf","back_en":"five","emoji":"⭐","count":5,"backShort":"5"},{"type":"bild","front":"Hund","back":"Hund","back_de":"Hund","back_en":"Dog","emoji":"🐕","backShort":"Dog"}]`
