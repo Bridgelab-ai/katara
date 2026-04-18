@@ -5,8 +5,8 @@
 
 /* ── Base Body ───────────────────────────────────────────────────────────── */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  background: #1A1F2E;
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #0D1117;
   color: #F0F4FF;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -16,15 +16,15 @@ body {
 /* ── Dot-grid backgrounds ─────────────────────────────────────────────────── */
 .app-bg {
   min-height: 100dvh;
-  background-color: #1A1F2E;
-  background-image: radial-gradient(circle, rgba(79,142,247,0.11) 1px, transparent 1px);
-  background-size: 30px 30px;
+  background-color: #0D1117;
+  background-image: radial-gradient(circle, rgba(0,212,170,0.07) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
 .dot-bg {
-  background-color: #1A1F2E;
-  background-image: radial-gradient(circle, rgba(79,142,247,0.08) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background-color: #0D1117;
+  background-image: radial-gradient(circle, rgba(0,212,170,0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
 /* ── Glassmorphism card ───────────────────────────────────────────────────── */
@@ -74,7 +74,7 @@ body {
 /* ── Progress bar ────────────────────────────────────────────────────────── */
 .progress-fill {
   transition: width 0.55s cubic-bezier(0.4, 0, 0.2, 1);
-  background: linear-gradient(90deg, #4F8EF7, #7BB8FF);
+  background: linear-gradient(90deg, #00D4AA, #00F5C8);
   border-radius: var(--r-sm, 8px);
   height: 100%;
 }
@@ -104,8 +104,8 @@ input[type="text"]:focus,
 input[type="email"]:focus,
 input:not([type]):focus,
 textarea:focus {
-  border-color: #4F8EF7;
-  box-shadow: 0 0 0 3px rgba(79,142,247,0.18);
+  border-color: #00D4AA;
+  box-shadow: 0 0 0 3px rgba(0,212,170,0.18);
 }
 
 input::placeholder,
@@ -119,7 +119,7 @@ textarea::placeholder { color: #7A8BAD; }
 
 /* ── Focus ring — keyboard navigation ───────────────────────────────────── */
 :focus-visible {
-  outline: 2px solid #4F8EF7;
+  outline: 2px solid #00D4AA;
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -138,13 +138,13 @@ button:focus:not(:focus-visible) { outline: none; }
 /* ── Drop zone ────────────────────────────────────────────────────────────── */
 .drop-zone { transition: border-color 0.2s ease, background 0.2s ease; }
 .drop-zone.drag-over {
-  border-color: #4F8EF7 !important;
-  background: rgba(79,142,247,0.08) !important;
+  border-color: #00D4AA !important;
+  background: rgba(0,212,170,0.08) !important;
 }
 
 /* ── Mastery bar colors ───────────────────────────────────────────────────── */
 .mastery-low  { background: #4A5675; }
-.mastery-mid  { background: #4F8EF7; }
+.mastery-mid  { background: #00D4AA; }
 .mastery-high { background: #34D399; }
 
 /* ── Skeleton shimmer ────────────────────────────────────────────────────── */
@@ -187,7 +187,7 @@ button:focus:not(:focus-visible) { outline: none; }
 }
 
 /* ── Glow ─────────────────────────────────────────────────────────────────── */
-.glow-pulse { box-shadow: 0 0 12px rgba(79,142,247,0.3); }
+.glow-pulse { box-shadow: 0 0 12px rgba(0,212,170,0.3); }
 
 /* ── 3D button press ──────────────────────────────────────────────────────── */
 .btn-3d {

@@ -11,17 +11,17 @@ import './App.css'
 
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 const T = {
-  bg:       '#1A1F2E',
-  s1:       'rgba(255,255,255,0.10)',   // surface base
-  s2:       'rgba(255,255,255,0.15)',   // surface elevated
-  s3:       'rgba(255,255,255,0.20)',   // surface hover / popup
-  s4:       'rgba(255,255,255,0.26)',   // surface active
-  border:   'rgba(255,255,255,0.18)',
-  borderHov:'rgba(255,255,255,0.30)',
-  acc:      '#4F8EF7',
-  accHov:   '#3B7BF0',
-  accDim:   'rgba(79,142,247,0.18)',
-  accGlow:  'rgba(79,142,247,0.32)',
+  bg:       '#0D1117',
+  s1:       'rgba(255,255,255,0.07)',   // surface base
+  s2:       'rgba(255,255,255,0.11)',   // surface elevated
+  s3:       'rgba(255,255,255,0.16)',   // surface hover / popup
+  s4:       'rgba(255,255,255,0.22)',   // surface active
+  border:   'rgba(255,255,255,0.14)',
+  borderHov:'rgba(255,255,255,0.26)',
+  acc:      '#00D4AA',
+  accHov:   '#00B894',
+  accDim:   'rgba(0,212,170,0.16)',
+  accGlow:  'rgba(0,212,170,0.30)',
   text:     '#FFFFFF',
   textSub:  '#D8E0F0',
   textDim:  '#B0C0D8',
@@ -401,10 +401,11 @@ const useWide = () => {
 // ─── CATEGORY COLORS ─────────────────────────────────────────────────────────
 const CAT_COLORS = [
   { id: 'blue',   hex: '#4F8EF7' },
-  { id: 'purple', hex: '#A78BFA' },
-  { id: 'green',  hex: '#34D399' },
-  { id: 'amber',  hex: '#FBBF24' },
-  { id: 'rose',   hex: '#F87171' },
+  { id: 'purple', hex: '#9B59B6' },
+  { id: 'green',  hex: '#27AE60' },
+  { id: 'amber',  hex: '#F39C12' },
+  { id: 'rose',   hex: '#E74C3C' },
+  { id: 'teal',   hex: '#00D4AA' },
 ]
 const catColor = id => CAT_COLORS.find(c => c.id === id)?.hex ?? CAT_COLORS[0].hex
 
@@ -630,24 +631,37 @@ const Modal = ({ children, onClose, width = 480 }) => {
 // ─── LOGO ─────────────────────────────────────────────────────────────────────
 const Logo = ({ size = 26, subtitle = false }) => {
   const T = useTheme()
+  const iconSize = Math.round(size * 1.0)
   return (
   <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
-    <div style={{
-      fontSize: size,
-      fontFamily: "'Exo 2', sans-serif",
-      fontWeight: 800,
-      background: 'linear-gradient(135deg, #F59E0B 0%, #FBBF24 40%, #F8D66A 60%, #F59E0B 100%)',
-      WebkitBackgroundClip: 'text',
-      WebkitTextFillColor: 'transparent',
-      letterSpacing: 2,
-    }}>
-      Katara
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <svg width={iconSize} height={iconSize} viewBox="0 0 28 28" fill="none" style={{ flexShrink: 0 }}>
+        <polygon points="14,3 26,25 2,25" fill="url(#logoGrad)" opacity="0.95" />
+        <polygon points="14,9 21,25 7,25" fill="rgba(0,0,0,0.25)" />
+        <defs>
+          <linearGradient id="logoGrad" x1="14" y1="3" x2="14" y2="25" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#00F5C8" />
+            <stop offset="100%" stopColor="#00A882" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div style={{
+        fontSize: size,
+        fontFamily: "'Exo 2', sans-serif",
+        fontWeight: 800,
+        background: 'linear-gradient(135deg, #00F5C8 0%, #00D4AA 50%, #00A882 100%)',
+        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+        letterSpacing: '0.1em',
+        filter: 'drop-shadow(0 0 12px rgba(0,212,170,0.35))',
+      }}>
+        Katara
+      </div>
     </div>
     {subtitle
-      ? <div style={{ fontSize: Math.max(8, size * 0.38), color: T.textSub, letterSpacing: 0.2, marginTop: 2, fontWeight: 500 }}>
+      ? <div style={{ fontSize: Math.max(8, size * 0.38), color: T.textSub, letterSpacing: 0.2, marginTop: 3, fontWeight: 500, paddingLeft: iconSize + 8 }}>
           Strukturiertes Lernen.
         </div>
-      : <div style={{ fontSize: Math.max(8, size * 0.31), color: T.textDim, letterSpacing: 1.8, marginTop: 2 }}>
+      : <div style={{ fontSize: Math.max(8, size * 0.31), color: T.textDim, letterSpacing: 1.8, marginTop: 3, paddingLeft: iconSize + 8 }}>
           BY BRIDGELAB
         </div>
     }
@@ -1080,11 +1094,12 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
         position: 'relative',
         minHeight: 120,
         display: 'flex', flexDirection: 'column', gap: 10,
-        background: hov ? '#2E3D5E' : '#253352',
-        border: `2px solid ${hov ? color : T.acc}`,
+        background: hov ? '#1C2230' : '#161B22',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderLeft: `3px solid ${color}`,
         boxShadow: hov
-          ? `0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px ${color}33`
-          : `0 4px 16px rgba(0,0,0,0.3)`,
+          ? `0 12px 32px rgba(0,0,0,0.5), 0 0 0 1px ${color}22`
+          : `0 4px 16px rgba(0,0,0,0.35)`,
         transform: hov ? 'translateY(-2px)' : 'none',
       }}
     >
@@ -1154,6 +1169,14 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
           <span>Von {item.sharedBy.name}</span>
         </div>
       )}
+
+      {/* Colored category circle */}
+      <div style={{
+        position: 'absolute', top: 12, right: 44,
+        width: 10, height: 10, borderRadius: '50%',
+        background: color, opacity: 0.85,
+        boxShadow: `0 0 8px ${color}88`,
+      }} />
 
       {/* Context menu — always visible */}
       <div
@@ -2525,7 +2548,7 @@ const PublicSetView = ({ shareId, currentUser }) => {
   return (
     <div className="app-bg" style={{ paddingBottom: 60 }}>
       {/* Header */}
-      <div className="header-glass" style={{ position: 'sticky', top: 0, zIndex: 100, borderBottom: `1px solid ${T.border}` }}>
+      <div className="header-glass" style={{ position: 'sticky', top: 0, zIndex: 100, borderBottom: '2px solid #00D4AA' }}>
         <div style={{ maxWidth: 720, margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
           <Logo size={20} subtitle />
           <div style={{ flex: 1 }} />
@@ -3408,7 +3431,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
                 { rating: 'falsch', icon: '❌', label: 'Falsch',  bg: T.redDim,              border: `${T.red}44`,                 color: T.red    },
                 { rating: 'fast',   icon: '😕', label: 'Fast',    bg: T.amberDim,            border: `${T.amber}44`,               color: T.amber  },
                 { rating: 'richtig',icon: '✅', label: 'Richtig', bg: T.greenDim,            border: `${T.green}44`,               color: T.green  },
-                { rating: 'easy',   icon: '⚡', label: 'Easy',    bg: 'rgba(147,51,234,0.1)', border: 'rgba(167,139,250,0.3)',      color: '#A78BFA'},
+                { rating: 'easy',   icon: '⚡', label: 'Easy',    bg: 'rgba(0,212,170,0.12)', border: 'rgba(0,212,170,0.35)',       color: '#00D4AA'},
               ].map(({ rating, icon, label, bg, border, color }) => (
                 <button
                   key={rating}
@@ -5343,10 +5366,10 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
             <div style={{ fontSize: 11, fontWeight: 700, color: T.textSub, letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 10 }}>Schnellstart</div>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
               {[
-                { icon: '💼', label: 'Beruf',   hex: '#4F8EF7', bg: 'rgba(79,142,247,0.22)'   },
-                { icon: '🎓', label: 'Schule',  hex: '#A78BFA', bg: 'rgba(167,139,250,0.22)'  },
-                { icon: '📖', label: 'Studium', hex: '#34D399', bg: 'rgba(52,211,153,0.22)'   },
-                { icon: '🎯', label: 'Hobby',   hex: '#F59E0B', bg: 'rgba(245,158,11,0.22)'   },
+                { icon: '💼', label: 'Beruf',   hex: '#E74C3C', bg: 'rgba(231,76,60,0.18)'    },
+                { icon: '🎓', label: 'Schule',  hex: '#9B59B6', bg: 'rgba(155,89,182,0.18)'   },
+                { icon: '📖', label: 'Studium', hex: '#27AE60', bg: 'rgba(39,174,96,0.18)'    },
+                { icon: '🎯', label: 'Hobby',   hex: '#F39C12', bg: 'rgba(243,156,18,0.18)'   },
               ].map(({ icon, label, hex, bg }) => {
                 const isLoading = quickLoading === label
                 return (
@@ -5361,7 +5384,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
                     }}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 7,
-                      padding: '8px 16px', borderRadius: 20, flexShrink: 0,
+                      padding: '8px 18px', borderRadius: 9999, flexShrink: 0,
                       background: isLoading ? T.accDim : bg,
                       border: `1px solid ${isLoading ? T.acc : hex}66`,
                       color: isLoading ? T.acc : '#F0F4FF',
