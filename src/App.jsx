@@ -654,29 +654,29 @@ const Modal = ({ children, onClose, width = 480 }) => {
 
 // ─── LOGO ─────────────────────────────────────────────────────────────────────
 const Logo = ({ size = 26, subtitle = false }) => {
-  const T = useTheme()
   return (
-  <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
     <div style={{
       fontSize: size,
       fontFamily: "'Exo 2', sans-serif",
       fontWeight: 800,
-      background: 'linear-gradient(135deg, #00F5C8 0%, #00D4AA 50%, #00A882 100%)',
-      WebkitBackgroundClip: 'text',
-      WebkitTextFillColor: 'transparent',
-      backgroundClip: 'text',
-      letterSpacing: '0.08em',
-      WebkitTextStroke: '0.6px rgba(184,134,11,0.55)',
-      filter: 'drop-shadow(0 0 14px rgba(0,212,170,0.4))',
+      color: '#00D4AA',
+      letterSpacing: '0.06em',
     }}>
       Katara
     </div>
+    <div style={{
+      width: '40%', height: 2, borderRadius: 1,
+      background: '#00D4AA',
+      marginTop: 4, marginBottom: subtitle ? 4 : 3,
+      opacity: 0.7,
+    }} />
     {subtitle
-      ? <div style={{ fontSize: Math.max(8, size * 0.38), color: T.textSub, letterSpacing: 0.2, marginTop: 3, fontWeight: 500 }}>
-          Strukturiertes Lernen.
+      ? <div style={{ fontSize: Math.max(8, size * 0.38), color: '#888', letterSpacing: '0.2em', marginTop: 1, fontWeight: 500, textTransform: 'uppercase' }}>
+          Strukturiertes Lernen
         </div>
-      : <div style={{ fontSize: Math.max(8, size * 0.31), color: '#B8860B', letterSpacing: 1.8, marginTop: 3, fontWeight: 600, opacity: 0.85 }}>
-          BY BRIDGELAB
+      : <div style={{ fontSize: 11, color: '#FFD700', letterSpacing: '0.3em', fontWeight: 600, textTransform: 'uppercase', opacity: 0.9 }}>
+          by Bridgelab
         </div>
     }
   </div>
@@ -2691,7 +2691,7 @@ const PublicSetView = ({ shareId, currentUser }) => {
           )}
           {comments.map(c => (
             <div key={c.id} style={{ display:'flex', gap: 10, marginBottom: 14 }}>
-              <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.accDim, border:`1px solid ${T.acc}44`, display:'flex', alignItems:'center', justifyContent:'center', fontSize: 13, fontWeight: 700, color: T.acc, flexShrink: 0 }}>
+              <div style={{ width: 32, height: 32, minWidth: 32, borderRadius: '50%', background: T.accDim, border:`1px solid ${T.acc}44`, display:'flex', alignItems:'center', justifyContent:'center', fontSize: 13, fontWeight: 700, color: T.acc, flexShrink: 0 }}>
                 {(c.authorName||'?')[0].toUpperCase()}
               </div>
               <div style={{ flex: 1 }}>
@@ -4902,7 +4902,7 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
         <SectionCard label={t.accountInfo}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
             {user.photoURL && (
-              <img src={user.photoURL} alt="" style={{ width: 42, height: 42, borderRadius: '50%', border: `1px solid ${T.border}`, flexShrink: 0 }} />
+              <img src={user.photoURL} alt="" style={{ width: 42, height: 42, minWidth: 42, borderRadius: '50%', border: `1px solid ${T.border}`, flexShrink: 0, objectFit: 'cover' }} />
             )}
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{user.displayName}</div>
@@ -5386,7 +5386,7 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
               onClick={onSettings}
               title="Einstellungen"
               style={{
-                width: 34, height: 34, borderRadius: '50%', padding: 0,
+                width: 36, height: 36, minWidth: 36, borderRadius: '50%', padding: 0,
                 background: user.photoURL ? 'none' : 'rgba(0,212,170,0.1)',
                 border: '2px solid #00D4AA',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
