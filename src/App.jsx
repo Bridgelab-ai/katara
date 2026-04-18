@@ -143,6 +143,14 @@ const TIPS = {
 const PartnerContext = createContext({ partnerUid: null, partnerName: null })
 const usePartner = () => useContext(PartnerContext)
 
+// ─── KI CONTENT RULES ────────────────────────────────────────────────────────
+const KI_CONTENT_RULES = `Pflichtregeln für alle Karten (unbedingt einhalten):
+- Kein religiöser Inhalt (keine Gebete, religiösen Rituale, Glaubenssätze oder spirituellen Praktiken)
+- Keine praktischen Übungen oder physischen Aufgaben (kein "Gehe raus und tu X", kein "Führe diese Übung durch", kein "Schreibe auf Papier")
+- Ausschließlich theoretisches, faktenbasiertes Lernmaterial
+- Jede Karte muss inhaltlich einzigartig und spezifisch für diesen Kontext sein — keine generischen oder austauschbaren Formulierungen
+- Karten müssen präzise und personalisiert wirken, nicht massenproduktartig`
+
 // ─── SCHOOL MODE CONSTANTS ────────────────────────────────────────────────────
 const SCHOOL_GRADES = ['Vorschule', ...Array.from({ length: 12 }, (_, i) => `Klasse ${i + 1}`)]
 const SCHOOL_LANGS  = [
@@ -1202,6 +1210,10 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
 // ─── CARD LIST ITEM ───────────────────────────────────────────────────────────
 const CardItem = ({ card, onSave, onDelete, onMove, onSendToPartner }) => {
   const T = useTheme()
+  const { cardSize } = useSettings()
+  const cardPad   = cardSize === 'small' ? '7px 10px'   : cardSize === 'large' ? '16px 18px'  : '11px 14px'
+  const frontSize = cardSize === 'small' ? 12           : cardSize === 'large' ? 16            : 14
+  const backSize  = cardSize === 'small' ? 11           : cardSize === 'large' ? 13            : 12
   const [hov,         setHov]         = useState(false)
   const [editing,     setEditing]     = useState(false)
   const [front,       setFront]       = useState(card.front || '')
@@ -1302,7 +1314,7 @@ const CardItem = ({ card, onSave, onDelete, onMove, onSendToPartner }) => {
         border: `1px solid ${hov ? T.borderHov : T.border}`,
         borderLeft: m > 0 ? `3px solid ${mColor}88` : `3px solid ${T.border}`,
         borderRadius: T.r2,
-        padding: '11px 14px',
+        padding: cardPad,
         transition: 'background 0.15s, border-color 0.15s',
         display: 'flex', alignItems: 'center', gap: 12,
         marginBottom: 8,
@@ -1318,11 +1330,11 @@ const CardItem = ({ card, onSave, onDelete, onMove, onSendToPartner }) => {
 
       {/* Content: front + back preview */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: frontSize, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {card.front || '(Bild)'}
         </div>
         {card.back && (
-          <div style={{ fontSize: 12, color: T.textSub, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: backSize, color: T.textSub, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             → {card.back}{card.backShort ? ` · ${card.backShort}` : ''}
           </div>
         )}
@@ -1614,7 +1626,7 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
         : '[{"front":"...","back":"...","backShort":"..."}]'
       content.push({
         type: 'text',
-        text: `${instrPart}Create flashcards from the above content.${sortPart}${pronunciationPart}\nReturn ONLY a valid JSON array. No markdown. No backticks. Start with [ and end with ]:\n${jsonExample}`,
+        text: `${instrPart}Create flashcards from the above content.${sortPart}${pronunciationPart}\n\n${KI_CONTENT_RULES}\nReturn ONLY a valid JSON array. No markdown. No backticks. Start with [ and end with ]:\n${jsonExample}`,
       })
 
       console.log('[KI] Sending', content.length, 'content blocks to API')
@@ -1733,7 +1745,7 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
         <Header title="KI-Kartengenerator" onBack={onClose} />
 
         <div style={{ padding: '32px 0' }}>
-          {!preview ? (
+          {!preview ? (<>
             <div className="fade-in">
 
               {/* ── Drop zone ── */}
@@ -1994,7 +2006,7 @@ const KIImportScreen = ({ cardsPath, destinations = [], onSaved, onClose, onCrea
               )}
             </div>
 
-          ) : (
+          </>) : (
             <div className="fade-in">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div style={{ fontSize: 15, color: T.text }}>
@@ -3517,7 +3529,16 @@ const SetupModal = ({ title, subtitle, onConfirm, onClose, children, canConfirm 
 const BERUF_FIELDS = ['Handwerk','IT','Medizin','Recht','Transport & Logistik','Gastronomie','Eigene Eingabe']
 const BERUF_LEVELS = ['Azubi','Fachkraft','Quereinstieg','Meister','Studium']
 const SETUP_COUNTRIES = ['Deutschland','Österreich','Schweiz','Andere']
-const SETUP_LANGS = [{ id:'de', label:'🇩🇪 Deutsch' },{ id:'en', label:'🇬🇧 Englisch' },{ id:'de+en', label:'Beide' }]
+const SETUP_LANGS = [
+  { id:'de', label:'🇩🇪 DE' },
+  { id:'en', label:'🇬🇧 EN' },
+  { id:'es', label:'🇪🇸 ES' },
+  { id:'fr', label:'🇫🇷 FR' },
+  { id:'sw', label:'🌍 SW' },
+]
+const getLangLabel = lang => ({
+  de: 'Deutsch', en: 'Englisch', es: 'Spanisch', fr: 'Französisch', sw: 'Swahili',
+}[lang] || 'Deutsch')
 
 const BerufSetupModal = ({ onConfirm, onClose }) => {
   const [field,   setField]   = useState('IT')
@@ -3780,6 +3801,9 @@ ${subjText}
 
 ${isYoung ? 'Use very simple language. Include a relevant emoji for each card.' : 'Use age-appropriate difficulty.'}
 ${langNote}
+Each card must be unique and specific to the topic — no generic fillers.
+
+${KI_CONTENT_RULES}
 
 Return ONLY a valid JSON array, no markdown:
 [{"front":"...","back":"...","back_de":"...","back_en":"...","emoji":"...","subject":"..."}]`
@@ -4562,6 +4586,8 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
   const [lang,        setLang]        = useState(settings.lang        || 'de')
   const [dailyGoal,   setDailyGoal]   = useState(settings.dailyGoal   || 10)
   const [defaultMode, setDefaultMode] = useState(settings.defaultMode || 'klassisch')
+  const [darkMode,    setDarkMode]    = useState(settings.darkMode    ?? false)
+  const [cardSize,    setCardSize]    = useState(settings.cardSize    || 'normal')
   const [saving,      setSaving]      = useState(false)
   const [saved,       setSaved]       = useState(false)
   const [tipsReset,   setTipsReset]   = useState(false)
@@ -4653,7 +4679,7 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
 
   const save = async () => {
     setSaving(true)
-    const data = { lang, dailyGoal, defaultMode }
+    const data = { lang, dailyGoal, defaultMode, darkMode, cardSize }
     try {
       await setDoc(doc(db, `users/${user.uid}/settings/preferences`), data)
       onSave(data)
@@ -4708,6 +4734,24 @@ const SettingsScreen = ({ user, settings, onSave, onBack }) => {
             ].map(([key, label]) => (
               <button key={key} onClick={() => setDefaultMode(key)} style={chipStyle(defaultMode === key)}>{label}</button>
             ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard label="Darstellung">
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Modus</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setDarkMode(false)} style={chipStyle(!darkMode)}>🌙 Dark</button>
+              <button onClick={() => setDarkMode(true)}  style={chipStyle(darkMode)}>☀️ Light</button>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textDim, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 }}>Kartengröße</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[['small','Klein'],['normal','Normal'],['large','Groß']].map(([val, label]) => (
+                <button key={val} onClick={() => setCardSize(val)} style={chipStyle(cardSize === val)}>{label}</button>
+              ))}
+            </div>
           </div>
         </SectionCard>
 
@@ -5324,27 +5368,30 @@ const HomeScreen = ({ user, onOpen, onSettings, streak = 0, totalCards = 0, week
 
       {modal       && <CreateModal title="Neue Hauptkategorie" placeholder="z.B. RiL 301" onSave={create} onClose={() => setModal(false)} withColor />}
       {berufSetup && <BerufSetupModal onConfirm={async ({ field, level, country, lang, fileData }) => {
-        const langLabel = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
+        const langLabel = getLangLabel(lang)
         const prompt = `Du bist ein erfahrener Ausbilder und Berufsschullehrer in ${country}. Erstelle 15 praxisnahe Lernkarten für das Berufsfeld "${field}" auf Niveau "${level}".
-Lernsprache: ${langLabel}. Decke wichtige Fachbegriffe, Prozesse, Vorschriften und Kernkonzepte ab, die in Prüfungen und im Berufsalltag relevant sind.
+Lernsprache: ${langLabel}. Decke wichtige Fachbegriffe, Prozesse, Vorschriften und Kernkonzepte ab, die in Prüfungen und im Berufsalltag relevant sind. Jede Karte soll spezifisch für "${field}" in ${country} sein.
+${KI_CONTENT_RULES}
 Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
 [{"front":"...","back":"...","backShort":"..."}]`
         await createWithKI('Beruf', 'blue', prompt, {}, fileData)
         setBerufSetup(false)
       }} onClose={() => setBerufSetup(false)} />}
       {studiumSetup && <StudiumSetupModal onConfirm={async ({ studiengang, semester, country, lang, fileData }) => {
-        const langLabel = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
+        const langLabel = getLangLabel(lang)
         const prompt = `Du bist ein erfahrener Hochschuldozent in ${country}. Erstelle 15 prüfungsrelevante Lernkarten für das Studium "${studiengang}", Semester ${semester}.
-Lernsprache: ${langLabel}. Decke die wichtigsten Konzepte, Fachbegriffe, Theorien und Methoden ab, die in Klausuren und mündlichen Prüfungen häufig abgefragt werden.
+Lernsprache: ${langLabel}. Decke die wichtigsten Konzepte, Fachbegriffe, Theorien und Methoden ab, die in Klausuren und mündlichen Prüfungen häufig abgefragt werden. Jede Karte soll spezifisch für "${studiengang}" Semester ${semester} sein.
+${KI_CONTENT_RULES}
 Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
 [{"front":"...","back":"...","backShort":"..."}]`
         await createWithKI('Studium', 'green', prompt, {}, fileData)
         setStudiumSetup(false)
       }} onClose={() => setStudiumSetup(false)} />}
       {hobbySetup && <HobbySetupModal onConfirm={async ({ hobby, level, lang, fileData }) => {
-        const langLabel = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
+        const langLabel = getLangLabel(lang)
         const prompt = `Du bist ein begeisterter Experte für "${hobby}". Erstelle 15 motivierende Lernkarten für Niveau "${level}".
-Lernsprache: ${langLabel}. Decke praktische Tipps, wichtige Begriffe, Techniken und interessante Fakten zum Hobby ab.
+Lernsprache: ${langLabel}. Decke wichtige Begriffe, Techniken, Fakten und Konzepte zu "${hobby}" ab — spezifisch und einzigartig pro Karte.
+${KI_CONTENT_RULES}
 Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
 [{"front":"...","back":"...","backShort":"..."}]`
         await createWithKI('Hobby', 'amber', prompt, {}, fileData)
@@ -5354,7 +5401,7 @@ Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Begin
         const countryObj  = SCHOOL_COUNTRIES.find(c => c.id === country)
         const countryName = countryObj?.name || 'Deutschland'
         const curriculum  = countryObj?.curriculum || 'KMK'
-        const langLabel   = lang === 'de' ? 'Deutsch' : lang === 'en' ? 'Englisch' : 'Deutsch und Englisch'
+        const langLabel   = getLangLabel(lang)
         const isVorschuleGrade = grade === 'Vorschule'
         const prompt = isVorschuleGrade
           ? `You are a kindergarten teacher creating flashcards for children aged 4-6.
@@ -5372,7 +5419,8 @@ Include a mix of all 6 types (at least 2 of each). ALL fields must be filled.
 Return ONLY a valid JSON array, no markdown:
 [{"type":"buchstabe","front":"A","back":"Apfel","back_de":"Apfel","back_en":"Apple","emoji":"🍎","backShort":"A"},{"type":"zählen","front":"Wie viele?","back":"drei","back_de":"drei","back_en":"three","emoji":"🐥","count":3,"backShort":"3"},{"type":"farbe","front":"Rot","back":"rot","back_de":"rot","back_en":"red","colorHex":"#EF4444","emoji":"🍎","backShort":"red"},{"type":"form","front":"Kreis","back":"Kreis","back_de":"Kreis","back_en":"Circle","shape":"kreis","backShort":"○"},{"type":"zahl","front":"5","back":"fünf","back_de":"fünf","back_en":"five","emoji":"⭐","count":5,"backShort":"5"},{"type":"bild","front":"Hund","back":"Hund","back_de":"Hund","back_en":"Dog","emoji":"🐕","backShort":"Dog"}]`
           : `Du bist ein erfahrener ${countryName}-Lehrer. Erstelle 15 altersgerechte Lernkarten für ${grade} in ${countryName} (${curriculum}-Lehrplan, ${new Date().getFullYear()}).
-Lernsprache: ${langLabel}. Karten sollen die wichtigsten Themen dieser Klassenstufe abdecken: Kernfächer, wichtige Begriffe, Konzepte.
+Lernsprache: ${langLabel}. Karten sollen die wichtigsten Themen dieser Klassenstufe abdecken: Kernfächer, wichtige Begriffe, Konzepte. Jede Karte spezifisch und einzigartig für ${grade}.
+${KI_CONTENT_RULES}
 Gib NUR ein gültiges JSON-Array zurück. Kein Markdown. Keine Erklärung. Beginne mit [ und ende mit ]:
 [{"front":"...","back":"...","backShort":"..."}]`
         await createWithKI('Schule', 'purple', prompt, { schoolMode: true, schoolGrade: grade, schoolLang: lang, schoolCountry: country }, fileData)
@@ -5857,7 +5905,7 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
 export default function App() {
   const [user,          setUser]          = useState(undefined)
   const [nav,           setNav]           = useState([{ screen: 'home' }])
-  const [settings,      setSettings]      = useState({ lang: 'de', dailyGoal: 10, defaultMode: 'klassisch' })
+  const [settings,      setSettings]      = useState({ lang: 'de', dailyGoal: 10, defaultMode: 'klassisch', darkMode: false, cardSize: 'normal' })
   const [streak,        setStreak]        = useState(0)
   const [totalCards,    setTotalCards]    = useState(0)
   const [weeklyMinutes, setWeeklyMinutes] = useState(0)
@@ -6031,8 +6079,12 @@ export default function App() {
     )
   }
 
+  const theme = settings.darkMode ? T_LIGHT : T
+
   return (
     <div style={{ filter: 'none', opacity: 1 }}>
+    <ThemeContext.Provider value={theme}>
+    <SettingsCtx.Provider value={{ cardSize: settings.cardSize || 'normal' }}>
     <LangContext.Provider value={lang}>
       <TipsContext.Provider value={{ dismissed: dismissedTips, dismiss: dismissTip, resetAll }}>
         <PartnerContext.Provider value={{ partnerUid: partnerInfo?.uid || null, partnerName: partnerInfo?.name || null }}>
@@ -6048,6 +6100,8 @@ export default function App() {
         </PartnerContext.Provider>
       </TipsContext.Provider>
     </LangContext.Provider>
+    </SettingsCtx.Provider>
+    </ThemeContext.Provider>
     </div>
   )
 }
