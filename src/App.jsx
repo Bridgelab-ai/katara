@@ -7,6 +7,9 @@ import {
   where, deleteField,
 } from 'firebase/firestore'
 import { auth, db, provider } from './firebase'
+import { calculateNextInterval, buildSession, checkMastery, getNextNewCards, saveProgressWithRetry, todayStr } from './srs.js'
+import { CardEditor, GroupStyleModal } from './CardEditor.jsx'
+import { resolveCardStyle, extractGroupStyle, getColorHex, getFontSizePx, getFontCss } from './cardStyles.js'
 import './App.css'
 
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
@@ -1261,7 +1264,7 @@ const FolderCard = ({ item, onClick, onRename, onDelete, onShare, onMove, onExpo
 }
 
 // ─── FOLDER ROW (list — Levels 2 & 3) ────────────────────────────────────────
-const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor, onLearn, onMove, onExport, onSendToPartner }) => {
+const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor, onLearn, onMove, onExport, onSendToPartner, onStyleDefault }) => {
   const T = useTheme()
   const [hov, setHov] = useState(false)
   const t = useT()
@@ -1325,6 +1328,7 @@ const FolderRow = ({ item, onClick, onRename, onDelete, countLabel, accentColor,
         <div onClick={e => e.stopPropagation()}>
           <CtxMenu items={[
             { label: t.rename,                                 action: onRename },
+            ...(onStyleDefault ? [{ label: '🎨 Kartenstandard', action: onStyleDefault }] : []),
             ...(onMove   ? [{ label: '↗ Verschieben',  action: onMove   }] : []),
             ...(onExport ? [{ label: '📤 Exportieren', action: onExport }] : []),
             { label: '📤 An Partner senden', action: onSendToPartner },
@@ -1441,7 +1445,7 @@ const CardItem = ({ card, onSave, onDelete, onMove, onSendToPartner }) => {
       style={{
         background: hov ? T.s3 : T.s2,
         border: `1px solid ${hov ? T.borderHov : T.border}`,
-        borderLeft: m > 0 ? `3px solid ${mColor}88` : `3px solid ${T.border}`,
+        borderLeft: getColorHex(card.bgColor) ? `3px solid ${getColorHex(card.bgColor)}` : m > 0 ? `3px solid ${mColor}88` : `3px solid ${T.border}`,
         borderRadius: T.r2,
         padding: cardPad,
         transition: 'background 0.15s, border-color 0.15s',
@@ -1525,89 +1529,6 @@ const ImgPreview = ({ src, onRemove }) => {
       }}
     >✕</button>
   </div>
-  )
-}
-
-// ─── CARD MODAL ───────────────────────────────────────────────────────────────
-const CardModal = ({ initial, onSave, onClose }) => {
-  const T = useTheme()
-  const [front,           setFront]           = useState(initial?.front           || '')
-  const [image,           setImage]           = useState(initial?.image           || null)
-  const [back,            setBack]            = useState(initial?.back            || '')
-  const [backShort,       setBackShort]       = useState(initial?.backShort       || '')
-  const [backImage,       setBackImage]       = useState(initial?.backImage       || null)
-  const [pronunciationDe, setPronunciationDe] = useState(initial?.pronunciation_de || '')
-  const [pronunciationEn, setPronunciationEn] = useState(initial?.pronunciation_en || '')
-  const [saving,          setSaving]          = useState(false)
-
-  const pickImg = setter => e => {
-    const f = e.target.files[0]; if (!f) return
-    const r = new FileReader(); r.onload = ev => setter(ev.target.result); r.readAsDataURL(f)
-  }
-
-  const save = async () => {
-    if (!back.trim() && !front.trim() && !image) return
-    setSaving(true)
-    await onSave({
-      front: front.trim(), image: image || null,
-      back: back.trim(), backShort: backShort.trim(), backImage: backImage || null,
-      pronunciation_de: pronunciationDe.trim(), pronunciation_en: pronunciationEn.trim(),
-    })
-    setSaving(false)
-  }
-
-  const SideLabel = ({ children }) => (
-    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.4, marginBottom: 12, color: T.acc }}>{children}</div>
-  )
-
-  const FieldLabel = ({ children }) => (
-    <div style={{ fontSize: 11, fontWeight: 600, color: T.textDim, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>{children}</div>
-  )
-
-  return (
-    <Modal onClose={onClose} width={660}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
-        <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text }}>
-          {initial ? 'Karte bearbeiten' : 'Neue Karte'}
-        </h3>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.textDim, cursor: 'pointer', fontSize: 18, padding: 4 }}>✕</button>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        {/* Front */}
-        <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: T.r, padding: 16, border: `1px solid ${T.border}` }}>
-          <SideLabel>VORDERSEITE</SideLabel>
-          <FieldLabel>Text</FieldLabel>
-          <textarea value={front} onChange={e => setFront(e.target.value)} placeholder="Begriff, Signal, Situation…" rows={3} style={{ marginBottom: 14 }} />
-          <FieldLabel>Bild (optional)</FieldLabel>
-          <input type="file" accept="image/*" onChange={pickImg(setImage)} style={{ fontSize: 12, color: T.textSub }} />
-          {image && <ImgPreview src={image} onRemove={() => setImage(null)} />}
-        </div>
-
-        {/* Back */}
-        <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: T.r, padding: 16, border: `1px solid ${T.border}` }}>
-          <SideLabel>RÜCKSEITE</SideLabel>
-          <FieldLabel>Langbezeichnung *</FieldLabel>
-          <textarea value={back} onChange={e => setBack(e.target.value)} placeholder="z.B. Hauptsignal Hp 0 — Halt" rows={3} style={{ marginBottom: 10 }} />
-          <FieldLabel>Kurzbezeichnung</FieldLabel>
-          <input value={backShort} onChange={e => setBackShort(e.target.value)} placeholder="z.B. Hp 0" style={{ marginBottom: 10 }} />
-          <FieldLabel>🇩🇪 Aussprache (optional)</FieldLabel>
-          <input value={pronunciationDe} onChange={e => setPronunciationDe(e.target.value)} placeholder="z.B. haupt-zig-nahl" style={{ marginBottom: 6 }} />
-          <FieldLabel>🇬🇧 Pronunciation (optional)</FieldLabel>
-          <input value={pronunciationEn} onChange={e => setPronunciationEn(e.target.value)} placeholder="e.g. howpt-zig-nahl" style={{ marginBottom: 14 }} />
-          <FieldLabel>Bild (optional)</FieldLabel>
-          <input type="file" accept="image/*" onChange={pickImg(setBackImage)} style={{ fontSize: 12, color: T.textSub }} />
-          {backImage && <ImgPreview src={backImage} onRemove={() => setBackImage(null)} />}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-        <Btn onClick={save} disabled={saving || (!back.trim() && !front.trim() && !image)} full>
-          {saving ? 'Speichert…' : initial ? 'Änderungen speichern' : 'Karte speichern'}
-        </Btn>
-        <Btn onClick={onClose} variant="secondary" style={{ flexShrink: 0, padding: '9px 16px' }}>Abbrechen</Btn>
-      </div>
-    </Modal>
   )
 }
 
@@ -2871,7 +2792,7 @@ const ShareModal = ({ catName, partnerName, onConfirm, onClose, sharing }) => (
 )
 
 // ─── LEARN MODE ───────────────────────────────────────────────────────────────
-const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
+const LearnMode = ({ cards: initCards, cardsPath, onClose, uid, groupStyle = null }) => {
   const { cardSize } = useSettings()
   const learnFrontSize = cardSize === 'small' ? 18 : cardSize === 'large' ? 28 : 22
   const learnBackSize  = cardSize === 'small' ? 20 : cardSize === 'large' ? 30 : 24
@@ -2895,6 +2816,15 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
   const sessionFalschRef   = useRef(0)    // cumulative falsch count for pattern detection
   const patternTriggeredRef = useRef(false)
   const micRef             = useRef(null)
+  const [cardProgress,    setCardProgress]    = useState({})
+  const newProgressRef    = useRef({})         // SM-2 progress accumulated during session
+
+  useEffect(() => {
+    newProgressRef.current = {}
+    getDoc(doc(db, 'users', uid))
+      .then(snap => { if (snap.exists()) setCardProgress(snap.data().cardProgress || {}) })
+      .catch(() => {})
+  }, [uid])
 
   const countOptions = (() => {
     const opts = [5, 10, 20].filter(n => n <= initCards.length)
@@ -2941,13 +2871,15 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     setKiError('')
     sessionStartRef.current = Date.now()
     sessionAttemptsRef.current = {}
+    newProgressRef.current = {}
     sessionFalschRef.current = 0
     patternTriggeredRef.current = false
     setPatternTip(''); setShowPatternTip(false)
 
     if (learnMode === 'klassisch') {
-      const shuffled = [...source].sort(() => Math.random() - 0.5).slice(0, count)
-      setQueue(shuffled); setSessionSize(shuffled.length)
+      const session = buildSession(initCards, cardProgress, count)
+      const selected = session.length > 0 ? session : [...initCards].sort(() => Math.random() - 0.5).slice(0, count)
+      setQueue(selected); setSessionSize(selected.length)
       setFlipped(false); setResults([]); setMicTranscript('')
       setPhase('session')
       return
@@ -3020,68 +2952,22 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     const card = queue[0]
     const rest = [...queue.slice(1)]
 
-    // Track how many times this card has been processed this session
     const attempts = (sessionAttemptsRef.current[card.id] || 0) + 1
     sessionAttemptsRef.current[card.id] = attempts
 
-    // Build Firestore update
-    const updates = { lastReviewed: serverTimestamp() }
+    // SM-2: compute next interval and accumulate in newProgressRef
+    const prevP = newProgressRef.current[card.id] || cardProgress[card.id] || {}
+    const sm2 = calculateNextInterval(card, rating, prevP)
+    newProgressRef.current = { ...newProgressRef.current, [card.id]: { ...prevP, ...sm2 } }
 
-    if (rating === 'falsch') {
-      updates.wrongCount = increment(1)
-      updates.consecutiveRight = 0
-      if (card.mastered) updates.mastered = false
-      // Re-insert at position 5 (cap at 2 re-inserts to prevent infinite loop)
+    if (rating === 'falsch' || rating === 'fast') {
       if (attempts < 3) {
         const insertAt = Math.min(4, rest.length)
         rest.splice(insertAt, 0, card)
-      }
-    } else if (rating === 'fast') {
-      updates.fastCount = increment(1)
-      updates.consecutiveRight = 0
-      if (card.mastered && card.nextReview) {
-        // Halve remaining review interval for mastered cards
-        const now = Date.now()
-        const nr = card.nextReview.toDate ? card.nextReview.toDate().getTime() : new Date(card.nextReview).getTime()
-        updates.nextReview = new Date(now + Math.max(0, nr - now) / 2)
-      }
-      // Re-insert once for another chance this session
-      if (attempts < 3) {
-        const insertAt = Math.min(4, rest.length)
-        rest.splice(insertAt, 0, card)
-      }
-    } else if (rating === 'richtig') {
-      updates.rightCount = increment(1)
-      const consRight = (card.consecutiveRight || 0) + 1
-      updates.consecutiveRight = consRight
-      // Skip future sessions after repeated success
-      if (consRight >= 5) {
-        updates.nextSessionDue = new Date(Date.now() + 2 * 86400000)
-      } else if (consRight >= 3) {
-        updates.nextSessionDue = new Date(Date.now() + 86400000)
-      }
-    } else if (rating === 'easy') {
-      updates.easyCount = increment(1)
-      updates.consecutiveRight = (card.consecutiveRight || 0) + 1
-      const newEasyCount = (card.easyCount || 0) + 1
-      if (newEasyCount >= 5) {
-        // Card is MASTERED — start spaced review schedule
-        updates.mastered = true
-        if (!card.masteredAt) updates.masteredAt = serverTimestamp()
-        const mri = card.masteryReviewIndex || 0
-        const masteryDays = [30, 60, 90, 180, 180]
-        updates.masteryReviewIndex = mri + 1
-        updates.nextReview = new Date(Date.now() + (masteryDays[Math.min(mri, 4)] * 86400000))
-      } else {
-        // Spaced repetition: 1st=5d, 2nd=10d, 3rd=21d, 4th+=30d
-        const easyDays = [5, 10, 21, 30]
-        updates.nextReview = new Date(Date.now() + (easyDays[Math.min(newEasyCount - 1, 3)] * 86400000))
       }
     }
 
-    try { await updateDoc(doc(db, `${cardsPath}/${card.id}`), updates) } catch (_) {}
-
-    // Fehler-Muster: trigger KI analysis after 5th cumulative falsch
+    // KI-Fehlermuster-Analyse nach dem 5. kumulativen Falsch
     if (rating === 'falsch') {
       sessionFalschRef.current += 1
       if (sessionFalschRef.current === 5 && !patternTriggeredRef.current) {
@@ -3107,13 +2993,23 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     setMicTranscript('')
 
     if (rest.length === 0) {
-      // Session complete — compute final per-card outcome (last rating wins)
       const durationMinutes = Math.round((Date.now() - (sessionStartRef.current || Date.now())) / 1000) / 60
       updateGlobalStats(uid, newResults.length, durationMinutes)
       const lastRatingMap = {}
       for (const r of newResults) lastRatingMap[r.card.id] = r
       const hardCards = Object.values(lastRatingMap).filter(r => r.rating === 'falsch' || r.rating === 'fast')
       fetchWrongTips(hardCards)
+
+      const finalProgress = { ...cardProgress, ...newProgressRef.current }
+      const correctCount = newResults.filter(r => r.rating !== 'falsch' && r.rating !== 'fast').length
+      if (checkMastery(initCards, finalProgress, correctCount, newResults.length)) {
+        getNextNewCards(initCards, finalProgress, 3).forEach(c => {
+          finalProgress[c.id] = { interval: 0, consecutiveRight: 0, wrongSessions: 0, nextReview: todayStr() }
+        })
+      }
+      saveProgressWithRetry(uid, finalProgress).catch(() => {})
+      setCardProgress(finalProgress)
+
       setQueue([])
       setPhase('result')
     } else {
@@ -3225,16 +3121,16 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     const lastRatingMap = {}
     for (const r of results) lastRatingMap[r.card.id] = r
     const finalResults = Object.values(lastRatingMap)
-    const falschFinal  = finalResults.filter(r => r.rating === 'falsch')
-    const fastFinal    = finalResults.filter(r => r.rating === 'fast')
-    const richtigFinal = finalResults.filter(r => r.rating === 'richtig')
-    const easyFinal    = finalResults.filter(r => r.rating === 'easy')
-    const goodCount    = richtigFinal.length + easyFinal.length
-    const totalUniq    = finalResults.length
-    const pct          = totalUniq > 0 ? Math.round(goodCount / totalUniq * 100) : 0
-    const hardResults  = [...falschFinal, ...fastFinal]
-    const masteredNow  = easyFinal.filter(r => (r.card.easyCount || 0) + 1 >= 5)
-    const lernzeit     = Math.round((Date.now() - (sessionStartRef.current || Date.now())) / 60000)
+    const falschFinal       = finalResults.filter(r => r.rating === 'falsch')
+    const fastFinal         = finalResults.filter(r => r.rating === 'fast')
+    const richtigFinal      = finalResults.filter(r => r.rating === 'unsicher' || r.rating === 'sicher')
+    const auswendigFinal    = finalResults.filter(r => r.rating === 'verinnerlicht' || r.rating === 'auswendig')
+    const goodCount         = richtigFinal.length + auswendigFinal.length
+    const totalUniq         = finalResults.length
+    const pct               = totalUniq > 0 ? Math.round(goodCount / totalUniq * 100) : 0
+    const hardResults       = [...falschFinal, ...fastFinal]
+    const masteredNow       = finalResults.filter(r => r.rating === 'auswendig')
+    const lernzeit          = Math.round((Date.now() - (sessionStartRef.current || Date.now())) / 60000)
 
     // Weakest card: most times rated 'falsch' across all results (not just last)
     const falschCounts = {}
@@ -3242,9 +3138,9 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
     const weakestId = Object.entries(falschCounts).sort((a, b) => b[1] - a[1])[0]?.[0]
     const weakestCard = weakestId ? finalResults.find(r => r.card.id === weakestId)?.card : null
 
-    // Strongest card: rated easy or richtig with zero falsch
+    // Strongest card: sicher/verinnerlicht/auswendig with zero falsch
     const falschIds = new Set(Object.keys(falschCounts))
-    const strongestCard = finalResults.find(r => !falschIds.has(r.card.id) && (r.rating === 'easy' || r.rating === 'richtig'))?.card || null
+    const strongestCard = finalResults.find(r => !falschIds.has(r.card.id) && (r.rating === 'sicher' || r.rating === 'verinnerlicht' || r.rating === 'auswendig'))?.card || null
 
     return (
       <div className="dot-bg" style={{ position: 'fixed', inset: 0, zIndex: 500, overflowY: 'auto' }}>
@@ -3259,10 +3155,10 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
           <div style={{ background: T.s2, border: `1px solid ${T.border}`, borderRadius: T.r2, padding: '20px 16px', marginBottom: 20 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, textAlign: 'center' }}>
               {[
-                { label: 'Falsch', count: falschFinal.length, color: T.red, icon: '❌' },
-                { label: 'Fast',   count: fastFinal.length,   color: T.amber, icon: '😕' },
-                { label: 'Richtig',count: richtigFinal.length, color: T.green, icon: '✅' },
-                { label: 'Easy',   count: easyFinal.length,   color: '#A78BFA', icon: '⚡' },
+                { label: 'Falsch',   count: falschFinal.length,    color: T.red,     icon: '❌' },
+                { label: 'Fast',     count: fastFinal.length,      color: T.amber,   icon: '😕' },
+                { label: 'Richtig',  count: richtigFinal.length,   color: T.green,   icon: '✅' },
+                { label: 'Auswendig',count: auswendigFinal.length, color: '#A78BFA', icon: '⭐' },
               ].map(({ label, count, color, icon }) => (
                 <div key={label}>
                   <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
@@ -3274,14 +3170,14 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
             <div style={{ marginTop: 16, height: 4, borderRadius: 2, background: T.s4, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, ${T.green}, #6EE7B7)`, borderRadius: 2, transition: 'width 0.6s' }} />
             </div>
-            <div style={{ textAlign: 'center', fontSize: 12, color: T.textDim, marginTop: 6 }}>{pct}% richtig / easy</div>
+            <div style={{ textAlign: 'center', fontSize: 12, color: T.textDim, marginTop: 6 }}>{pct}% richtig / auswendig</div>
           </div>
 
           {/* Mastered notice */}
           {masteredNow.length > 0 && (
             <div style={{ background: 'rgba(147,51,234,0.1)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: T.r2, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 20 }}>⭐</span>
-              <span style={{ fontSize: 13, color: '#C4B5FD', fontWeight: 600 }}>{masteredNow.length} Karte{masteredNow.length > 1 ? 'n' : ''} gemeistert! Nächste Wiederholung in 30 Tagen.</span>
+              <span style={{ fontSize: 13, color: '#C4B5FD', fontWeight: 600 }}>{masteredNow.length} Karte{masteredNow.length > 1 ? 'n' : ''} auswendig! Nächste Wiederholung in 365 Tagen.</span>
             </div>
           )}
 
@@ -3357,6 +3253,11 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
   // ── SESSION ───────────────────────────────────────────────────────────────────
   const card = queue[0]
   if (!card) return null
+  const cs          = resolveCardStyle(card, groupStyle)
+  const cardBgHex   = getColorHex(cs.bgColor)
+  const cardFgHex   = getColorHex(cs.textColor)
+  const cardFontPx  = getFontSizePx(cs.fontSize)
+  const cardFontCss = getFontCss(cs.fontFamily)
   // Progress: based on cards removed from initial session (completed = sessionSize - remaining unique)
   const uniqueRemaining = new Set(queue.map(c => c.id)).size
   const uniqueInitial   = sessionSize
@@ -3407,7 +3308,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
             <div className={`flip-inner${flipped ? ' flipped' : ''}`} style={{ minHeight: 260 }}>
               {/* FRONT */}
               <div className="flip-front" style={{
-                background: card.mastered ? 'rgba(26, 20, 50, 0.92)' : 'rgba(23, 30, 48, 0.8)',
+                background: cardBgHex || (card.mastered ? 'rgba(26, 20, 50, 0.92)' : 'rgba(23, 30, 48, 0.8)'),
                 border: card.mastered ? '2px solid rgba(167,139,250,0.7)' : '1px solid rgba(255,255,255,0.07)',
                 borderRadius: T.r3, padding: '48px 40px 32px', minHeight: 260,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -3422,7 +3323,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
                   </div>
                 )}
                 {card.image && <img src={card.image} alt="" style={{ maxHeight: 150, maxWidth: '100%', borderRadius: 10, marginBottom: 22, objectFit: 'contain' }} />}
-                <div style={{ fontSize: learnFrontSize, fontWeight: 600, color: T.text, lineHeight: 1.45 }}>{card.front || '(Bild)'}</div>
+                <div style={{ fontSize: cardFontPx || learnFrontSize, fontWeight: 600, color: cardFgHex || T.text, fontFamily: cardFontCss || undefined, lineHeight: 1.45 }}>{card.front || '(Bild)'}</div>
                 {card.front && card.front.trim().length <= 3 && <PhoneticHint key={card.id} text={card.front.trim()} />}
                 <div style={{ fontSize: 12, color: T.textDim, marginTop: 20, letterSpacing: 0.5 }}>Klicken zum Aufdecken</div>
                 {/* Mic button */}
@@ -3450,7 +3351,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
               </div>
               {/* BACK */}
               <div className="flip-back" style={{
-                background: card.mastered ? 'rgba(26, 20, 50, 0.95)' : 'rgba(20, 28, 50, 0.88)',
+                background: cardBgHex || (card.mastered ? 'rgba(26, 20, 50, 0.95)' : 'rgba(20, 28, 50, 0.88)'),
                 border: card.mastered ? '2px solid rgba(167,139,250,0.7)' : `1px solid ${T.acc}44`,
                 borderRadius: T.r3, padding: '52px 40px', minHeight: 260,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -3461,7 +3362,7 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
               }}>
                 {card.backImage && <img src={card.backImage} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 10, marginBottom: 20, objectFit: 'contain' }} />}
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.acc, letterSpacing: 1.6, marginBottom: 14 }}>ANTWORT</div>
-                <div style={{ fontSize: learnBackSize, fontWeight: 700, color: T.text, lineHeight: 1.4, marginBottom: 10 }}>{card.back}</div>
+                <div style={{ fontSize: cardFontPx ? Math.round(cardFontPx * 0.95) : learnBackSize, fontWeight: 700, color: cardFgHex || T.text, fontFamily: cardFontCss || undefined, lineHeight: 1.4, marginBottom: 10 }}>{card.back}</div>
                 {card.backShort && <div style={{ fontSize: learnShortSize, color: T.amber, fontWeight: 600, marginBottom: 10 }}>{card.backShort}</div>}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 6, flexWrap: 'wrap' }}>
                   <TtsBtn text={card.pronunciation_de || card.back} lang="de-DE" label="🇩🇪 DE" />
@@ -3487,21 +3388,23 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
             </div>
           </div>
 
-          {/* 4-button rating row */}
+          {/* 6-button rating row (SM-2) */}
           {flipped && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
               {[
-                { rating: 'falsch', icon: '❌', label: 'Falsch',  bg: T.redDim,              border: `${T.red}44`,                 color: T.red    },
-                { rating: 'fast',   icon: '😕', label: 'Fast',    bg: T.amberDim,            border: `${T.amber}44`,               color: T.amber  },
-                { rating: 'richtig',icon: '✅', label: 'Richtig', bg: T.greenDim,            border: `${T.green}44`,               color: T.green  },
-                { rating: 'easy',   icon: '⚡', label: 'Easy',    bg: 'rgba(0,212,170,0.12)', border: 'rgba(0,212,170,0.35)',       color: '#00D4AA'},
+                { rating: 'falsch',       icon: '❌', label: 'Falsch',       bg: T.redDim,               border: `${T.red}44`,           color: T.red      },
+                { rating: 'fast',         icon: '😕', label: 'Fast',         bg: T.amberDim,             border: `${T.amber}44`,         color: T.amber    },
+                { rating: 'unsicher',     icon: '🤔', label: 'Unsicher',     bg: 'rgba(234,179,8,0.10)', border: 'rgba(234,179,8,0.35)', color: '#EAB308'  },
+                { rating: 'sicher',       icon: '✅', label: 'Sicher',       bg: T.greenDim,             border: `${T.green}44`,         color: T.green    },
+                { rating: 'verinnerlicht',icon: '⚡', label: 'Verinnerlicht',bg: 'rgba(0,212,170,0.12)', border: 'rgba(0,212,170,0.35)', color: '#00D4AA'  },
+                { rating: 'auswendig',    icon: '⭐', label: 'Auswendig',    bg: 'rgba(167,139,250,0.12)',border: 'rgba(167,139,250,0.35)',color: '#A78BFA' },
               ].map(({ rating, icon, label, bg, border, color }) => (
                 <button
                   key={rating}
                   onClick={() => rate(rating)}
                   style={{
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    padding: '14px 8px', borderRadius: T.r2, fontSize: 13, fontWeight: 700,
+                    padding: '11px 6px', borderRadius: T.r2, fontSize: 12, fontWeight: 700,
                     background: bg, border: `1px solid ${border}`, color,
                     cursor: 'pointer', transition: 'transform 0.08s, box-shadow 0.08s',
                     boxShadow: `0 2px 8px rgba(0,0,0,0.2)`,
@@ -3510,8 +3413,8 @@ const LearnMode = ({ cards: initCards, cardsPath, onClose, uid }) => {
                   onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)' }}
                   onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
                 >
-                  <span style={{ fontSize: 20, marginBottom: 5 }}>{icon}</span>
-                  <span style={{ fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase' }}>{label}</span>
+                  <span style={{ fontSize: 18, marginBottom: 4 }}>{icon}</span>
+                  <span style={{ fontSize: 10, letterSpacing: 0.4, textTransform: 'uppercase' }}>{label}</span>
                 </button>
               ))}
             </div>
@@ -5674,10 +5577,12 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
   const [exportData,   setExportData]   = useState(null) // { cards, name }
   const [activeTip,    setActiveTip]    = useState(null)
   const [sendTarget,   setSendTarget]   = useState(null) // { name, getCards }
-  const [schoolKi,     setSchoolKi]     = useState(false)
+  const [schoolKi,       setSchoolKi]       = useState(false)
+  const [groupStyleModal, setGroupStyleModal] = useState(null) // item object
   const { dismissed }  = useTips()
   const { partnerUid, partnerName }     = usePartner()
   const t         = useT()
+  const T         = useTheme()
   const uid       = user.uid
   const isSchool  = !!cat.schoolMode
   const isVorschule = isSchool && (cat.schoolGrade === 'Vorschule' || cat.schoolGrade === 'Klasse 1' || cat.schoolGrade === 'Klasse 2')
@@ -5730,6 +5635,10 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
     await moveSubcatToCat(uid, cat.id, movingSub.id, dstCatId)
     setMoving(false); load()
   }
+  const saveGroupStyle = async (item, styleData) => {
+    await updateDoc(doc(db, `${path}/${item.id}`), styleData)
+    setGroupStyleModal(null); load()
+  }
 
   return (
     <div className="app-bg" style={{ minHeight: '100vh', paddingBottom: 60 }}>
@@ -5775,9 +5684,10 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
                   if (!dismissed.has('lernen')) { setActiveTip('lernen'); return }
                   const p = `${path}/${item.id}/cards`
                   const cs = await loadDocs(p)
-                  if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p })
+                  if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p, groupStyle: extractGroupStyle(item) })
                   else onOpen(item)
                 }}
+                onStyleDefault={() => setGroupStyleModal(item)}
                 onSendToPartner={() => setSendTarget({
                   name: item.name,
                   getCards: async () => {
@@ -5812,14 +5722,15 @@ const SubcategoryScreen = ({ user, cat, onBack, onOpen, onNavigate }) => {
       </div>
       {modal        && <CreateModal title={t.newGroup.replace('+ ','')} placeholder="z.B. Hauptsignale" onSave={create} onClose={() => setModal(false)} />}
       {renaming     && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
-      {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {cardModal    && <CardEditor initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} theme={T} groupStyle={extractGroupStyle(cat)} />}
+      {groupStyleModal && <GroupStyleModal initial={groupStyleModal} groupName={groupStyleModal.name} onSave={data => saveGroupStyle(groupStyleModal, data)} onClose={() => setGroupStyleModal(null)} theme={T} />}
       {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const t = activeTip; setActiveTip(null); if (t === 'ki-import') setKiImport(true); else if (t === 'lernen') setLearning(true) }} />}
       {sendTarget   && <SendToPartnerModal uid={uid} displayName={user.displayName || user.email} name={sendTarget.name} getCards={sendTarget.getCards} onClose={() => setSendTarget(null)} />}
       {learning     && isVorschule
         ? <VorschuleLearnMode cards={cards} cardsPath={cardsPath} cat={cat} uid={uid} onClose={() => { setLearning(false); load() }} />
-        : learning && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />
+        : learning && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} groupStyle={extractGroupStyle(cat)} onClose={() => { setLearning(false); load() }} />
       }
-      {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
+      {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} groupStyle={rowLearn.groupStyle} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
       {movingSub    && <MoveFolderModal uid={uid} mode="pick-cat" excludeId={cat.id} onPick={handleSubMove} onClose={() => setMovingSub(null)} />}
       {exportData   && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
@@ -5858,11 +5769,13 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
   const [movingSs,     setMovingSs]     = useState(null) // subsubcat being moved
   const [moving,       setMoving]       = useState(false)
   const [exportData,   setExportData]   = useState(null) // { cards, name }
-  const [activeTip,    setActiveTip]    = useState(null)
+  const [activeTip,      setActiveTip]      = useState(null)
+  const [groupStyleModal, setGroupStyleModal] = useState(null) // item object
   const { dismissed }  = useTips()
   const { partnerUid, partnerName }     = usePartner()
   const [sendTarget,   setSendTarget]   = useState(null)
   const t         = useT()
+  const T         = useTheme()
   const uid       = user.uid
   const path      = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories`
   const cardsPath = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/cards`
@@ -5913,6 +5826,10 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
     await moveSubsubcatToSub(uid, cat.id, sub.id, movingSs.id, dstCatId, dstSubId)
     setMoving(false); load()
   }
+  const saveGroupStyle = async (item, styleData) => {
+    await updateDoc(doc(db, `${path}/${item.id}`), styleData)
+    setGroupStyleModal(null); load()
+  }
 
   return (
     <div className="app-bg" style={{ minHeight: '100vh', paddingBottom: 60 }}>
@@ -5955,8 +5872,9 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
                   if (!dismissed.has('lernen')) { setActiveTip('lernen'); return }
                   const p = `${path}/${item.id}/cards`
                   const cs = await loadDocs(p)
-                  if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p })
+                  if (cs.length > 0) setRowLearn({ cards: cs, cardsPath: p, groupStyle: extractGroupStyle(item) })
                 } : undefined}
+                onStyleDefault={() => setGroupStyleModal(item)}
                 onSendToPartner={() => setSendTarget({ name: item.name, getCards: () => loadDocs(`${path}/${item.id}/cards`) })}
               />
             ))}
@@ -5980,11 +5898,12 @@ const SubSubcategoryScreen = ({ user, cat, sub, onBack, onOpen, onNavigate }) =>
       </div>
       {modal        && <CreateModal title={t.newSubgroup.replace('+ ','')} placeholder="z.B. Hp-Begriffe" onSave={create} onClose={() => setModal(false)} />}
       {renaming     && <RenameModal current={renaming.name} onSave={name => rename(renaming.id, name)} onClose={() => setRenaming(null)} />}
-      {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {cardModal    && <CardEditor initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} theme={T} groupStyle={extractGroupStyle(sub)} />}
+      {groupStyleModal && <GroupStyleModal initial={groupStyleModal} groupName={groupStyleModal.name} onSave={data => saveGroupStyle(groupStyleModal, data)} onClose={() => setGroupStyleModal(null)} theme={T} />}
       {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const tip = activeTip; setActiveTip(null); if (tip === 'ki-import') setKiImport(true); else if (tip === 'lernen') setLearning(true) }} />}
       {sendTarget   && <SendToPartnerModal uid={uid} displayName={user.displayName || user.email} name={sendTarget.name} getCards={sendTarget.getCards} onClose={() => setSendTarget(null)} />}
-      {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
-      {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} onClose={() => { setRowLearn(null); load() }} />}
+      {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} groupStyle={extractGroupStyle(sub)} onClose={() => { setLearning(false); load() }} />}
+      {rowLearn     && <LearnMode cards={rowLearn.cards} cardsPath={rowLearn.cardsPath} uid={uid} groupStyle={rowLearn.groupStyle} onClose={() => { setRowLearn(null); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
       {movingSs     && <MoveFolderModal uid={uid} mode="pick-subcat" excludeId={sub.id} onPick={handleSsMove} onClose={() => setMovingSs(null)} />}
       {exportData   && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
@@ -6021,6 +5940,7 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
   const { dismissed }  = useTips()
   const { partnerUid, partnerName }     = usePartner()
   const t = useT()
+  const T = useTheme()
   const uid      = user.uid
   const basePath = `users/${uid}/categories/${cat.id}/subcategories/${sub.id}/subsubcategories/${subsub.id}`
   const cardsPath = `${basePath}/cards`
@@ -6106,11 +6026,11 @@ const CardsScreen = ({ user, cat, sub, subsub, onBack, onNavigate }) => {
         ))}
       </div>
 
-      {cardModal    && <CardModal initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} />}
+      {cardModal    && <CardEditor initial={cardModal === 'new' ? null : cardModal} onSave={saveCard} onClose={() => setCardModal(null)} theme={T} groupStyle={extractGroupStyle(subsub)} />}
       {activeTip    && <TipModal tipKey={activeTip} onClose={() => { const tip = activeTip; setActiveTip(null); if (tip === 'ki-import') setKiImport(true); else if (tip === 'lernen') setLearning(true) }} />}
       {sendTarget   && <SendToPartnerModal uid={uid} displayName={user.displayName || user.email} name={sendTarget.name} getCards={sendTarget.getCards} onClose={() => setSendTarget(null)} />}
       {kiImport     && <KIImportScreen cardsPath={cardsPath} onSaved={() => { setKiImport(false); load() }} onClose={() => setKiImport(false)} />}
-      {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} onClose={() => { setLearning(false); load() }} />}
+      {learning     && <LearnMode cards={cards} cardsPath={cardsPath} uid={uid} groupStyle={extractGroupStyle(subsub)} onClose={() => { setLearning(false); load() }} />}
       {folderPicker && <FolderPickerModal uid={uid} currentPath={cardsPath} onPick={newPath => moveCard(folderPicker, newPath)} onClose={() => setFolderPicker(null)} />}
       {exportData   && <ExportModal cards={exportData.cards} folderName={exportData.name} onClose={() => setExportData(null)} />}
     </div>

@@ -1,4 +1,28 @@
-# KATARA TODO
+# KATARA TODO — Stand 31.08.2026
+
+---
+
+## ✅ Karten-Styling + CardEditor + GroupStyleModal — V01.002.000 (31.08.2026)
+- **Was geändert:**
+  - `src/cardStyles.js` (neu): 11 Farben (Dunkelblau, Mitternacht, Waldgrün, Rubinrot, Gold, Schiefergrau, Tiefviolett, Ozeanblau, Kastanienbraun, Elfenbein, Onyx), 5 Schriftgrößen (XS–XL), 5 Schriftfamilien (System, Serif, Mono, Rounded, Condensed). Exports: `CARD_COLORS`, `CARD_FONT_SIZES`, `CARD_FONT_FAMILIES`, `getColorHex()`, `getFontSizePx()`, `getFontCss()`, `resolveCardStyle()`, `extractGroupStyle()`
+  - `src/CardEditor.jsx` (neu): `CardEditor` ersetzt `CardModal` vollständig — Inhalt (Vorder-/Rückseite, Bilder, Aussprache) + 4 Style-Picker (Hintergrundfarbe, Textfarbe, Schriftgröße, Schriftfamilie) + Live-Vorschau + Warnhinweis bei identischen Farben; `GroupStyleModal` für Gruppenstandards (4 Picker + Vorschau)
+  - `src/App.jsx`: Imports ergänzt; `FolderRow` + `onStyleDefault`-Prop → `CtxMenu`-Eintrag „🎨 Kartenstandard"; `CardItem` zeigt `bgColor` als linken Border-Streifen; `LearnMode` + `groupStyle`-Prop + `resolveCardStyle` angewendet auf Karten-Hintergrund, -Textfarbe, -Schriftgröße, -Familie; `SubcategoryScreen`/`SubSubcategoryScreen`/`CardsScreen`: `CardModal` → `CardEditor`, `groupStyleModal`-State + `saveGroupStyle()`, `useTheme()` ergänzt, `rowLearn` trägt jetzt `groupStyle`
+- **Datenmodell-Erweiterung (Karte, nullable):** `bgColor`, `textColor`, `fontSize`, `fontFamily`
+- **Datenmodell-Erweiterung (Gruppe/Unterkategorie, nullable):** `defaultBgColor`, `defaultTextColor`, `defaultFontSize`, `defaultFontFamily`
+- **Vererbungskette:** Karten-Wert → Gruppen-Standard → null (kein Override)
+- **CODE-ÄNDERUNGEN:** `src/cardStyles.js` (neu), `src/CardEditor.jsx` (neu), `src/App.jsx`
+
+---
+
+## ✅ Firebase-Config + SRS aus Vocara portiert + 6-Stufen-Rating — V01.001.000 (31.08.2026)
+- **Diagnose:** `firebase.js` zeigte auf `vocara-ca2b7` (falsches Projekt). Kein SM-2: alte SRS schrieb `mastery`/`easyCount`/`nextReview`-Timestamp direkt ins Karten-Dokument. Nur 4 Rating-Stufen (`falsch`, `fast`, `richtig`, `easy`).
+- **Was geändert:**
+  - `firebase.js`: Config auf `katara-bridgelab` korrigiert
+  - `src/srs.js` (neu): `calculateNextInterval`, `buildSession`, `checkMastery`, `getNextNewCards`, `saveProgressWithRetry`, `todayStr` — portiert 1:1 aus Vocara `appShared.js`, ohne Flip-Marker und ohne targetLang-Filter
+  - `App.jsx / LearnMode`: cardProgress-State lädt `users/{uid}.cardProgress` beim Mount; `newProgressRef` akkumuliert SM-2-Ergebnis; Session-Ende schreibt via `saveProgressWithRetry`; `startSession` (klassisch) nutzt `buildSession`; `rate()` komplett auf SM-2 umgebaut (kein `updateDoc` auf Karten-Doc mehr); 4-Button-Row → 6-Button-Grid (3×2): `falsch`/`fast`/`unsicher`/`sicher`/`verinnerlicht`/`auswendig`; Result-Screen aktualisiert
+- **CODE-ÄNDERUNGEN:** `src/firebase.js`, `src/srs.js` (neu), `src/App.jsx` (LearnMode)
+- **Veraltete Karten-Felder (nicht mehr geschrieben/gelesen, harmlos):** `mastery`, `easyCount`, `nextReview` (Timestamp), `masteryReviewIndex`, `correctCount`, `wrongCount`, `fastCount`, `rightCount`, `nextSessionDue`
+- **Persistenz-Modell:** `users/{uid}.cardProgress` = `{ [cardId]: { interval, easiness, consecutiveRight, wrongSessions, lapse, nextReview (YYYY-MM-DD), mastered, masteredAt } }` — identisch mit Vocara
 
 ---
 
